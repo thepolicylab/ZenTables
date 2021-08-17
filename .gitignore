@@ -1,0 +1,12 @@
+# Python cruft
+/.mypy_cache
+/.pytest_cache
+/.venv
+__pycache__
+/dist
+.ipynb_checkpoints
+
+# Editor cruft
+.vscode
+*~
+.*.swp
