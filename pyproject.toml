@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "ZenTables"
-version = "0.2.0"
-description = "A convenience package for generating descriptive tables."
+version = "0.2.0b2"
+description = "Stress-free descriptive tables in Python."
 authors = [
     "Paul Xu <yang_xu@brown.edu>",
     "The Policy Lab <thepolicylab@brown.edu>"
