@@ -8,7 +8,7 @@ import zentables as zen
 df.zen.pretty()
 ```
 
-![Formatting tables in one line](docs/images/image1.png?raw=True)
+![Formatting tables in one line](https://raw.githubusercontent.com/thepolicylab/ZenTables/main/docs/images/image1.png)
 
 ## Features
 
@@ -51,17 +51,17 @@ df.zen.pretty()
 
 And this is the result:
 
-![zen.pretty() result](docs/images/image2.png?raw=true)
+![zen.pretty() result](https://raw.githubusercontent.com/thepolicylab/ZenTables/main/docs/images/image2.png)
 
 Click on the `Copy Table` button to transfer the table to Google Docs and Word. Formatting will be preserved.
 
 Results in Google Docs (Tested on Chrome, Firefox, and Safari):
 
-![Results in Google Docs](docs/images/image3.png?raw=true)
+![Results in Google Docs](https://raw.githubusercontent.com/thepolicylab/ZenTables/main/docs/images/image3.png)
 
 Results in Microsoft Word:
 
-![Results in Word](docs/images/image4.png?raw=true)
+![Results in Word](https://raw.githubusercontent.com/thepolicylab/ZenTables/main/docs/images/image4.png)
 
 ### 2. How to control my tables' appearance?
 
@@ -81,7 +81,7 @@ df.zen.pretty(font_family="Times New Roman, serif", font_size="12pt")
 
 Both will result in a table that looks like this
 
-![Result change fonts](docs/images/image5.png?raw=true)
+![Result change fonts](https://raw.githubusercontent.com/thepolicylab/ZenTables/main/docs/images/image5.png)
 
 We are working on adding more customization options in a future release.
 
@@ -111,7 +111,7 @@ Use `totals` and `subtotals` parameters to specify whether totals and subtotals 
 
 Additionally, you can control the names of the total and subtotal categories using `totals_names` and `subtotals_names` parameters.
 
-![Result freq_table()](docs/images/image6.png?raw=true)
+![Result freq_table()](https://raw.githubusercontent.com/thepolicylab/ZenTables/main/docs/images/image6.png)
 
 #### 3.2. Mean and standard deviation tables
 
@@ -132,7 +132,7 @@ mean_sd_table.zen.pretty() # You can also chain the methods
 
 Similar to `freq_tables`, you can use `margins` and `submargins` parameters to specify whether aggregations at the top and intermediate levels will be added. Additionally, you can control the names of the total and subtotal categories using `margins_names` and `submargins_names` parameters.
 
-![Result mean_sd_table()](docs/images/image7.png?raw=true)
+![Result mean_sd_table()](https://raw.githubusercontent.com/thepolicylab/ZenTables/main/docs/images/image7.png)
 
 #### 3.3 Other descriptive statistics tables
 
@@ -160,7 +160,7 @@ mean_median_table.zen.pretty().format(precision=1) # Specify level of precision
 
 There are two differences between this `pivot_table()` method and the `pandas` `pivot_table` method. First, like `mean_sd_table()`, it provides `submargins` and `submargins_names` for creating intermediate-level aggregations. Second, results are grouped by `values`, `columns`, and `aggfuncs`, instead of `aggfuncs`, `values`, and `columns`. This provides more readability than what the `pandas` version provides.
 
-![Result pivot_table()](docs/images/image8.png?raw=true)
+![Result pivot_table()](https://raw.githubusercontent.com/thepolicylab/ZenTables/main/docs/images/image8.png)
 
 ### 4. Tips and tricks
 
