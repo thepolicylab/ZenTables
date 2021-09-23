@@ -830,24 +830,34 @@ def _combine_n_pct(
     df_n: pd.DataFrame,
     df_pct: pd.DataFrame,
     digits: int = 1,
+    suppress_symbol: str = "*",
 ) -> pd.DataFrame:
     """
     Helper function that formats and combines n and pct values
     """
     df_n_str = df_n.astype(str)
     df_pct_str = df_pct.applymap(lambda x: f" ({x:.{digits}%})", na_action="ignore")
-    return df_n_str.add(df_pct_str).fillna("*")
+    return df_n_str.add(df_pct_str).fillna(f"{suppress_symbol}")
 
 
 def _is_between(x, ceiling: int = 10):
+    """
+    Helper function that verifies if the input is below ceiling value
+    """
     return x in range(1, ceiling)
 
 
 def _add_random_noise(x, rng):
+    """
+    Helper function that adds random noise to entry according a Uniform distribution
+    """
     return x + rng.uniform(0, 1)
 
 
-def _local_suppression(mini_df_n, ceiling: int = 10, seed: int = 2021):
+def _local_suppression(mini_df_n: pd.DataFrame, ceiling: int = 10, seed: int = 2021):
+    """
+    Helper function that applies cell suppression to
+    """
     rng = np.random.default_rng(seed)
     mask = mini_df_n.applymap(lambda entry: _is_between(entry, ceiling))
 
@@ -884,7 +894,17 @@ def _local_suppression(mini_df_n, ceiling: int = 10, seed: int = 2021):
     return mask
 
 
-def _do_suppression(df_n, submargins: bool, ceiling: int = 10, seed: int = 2021):
+def _do_suppression(
+    df_n: pd.DataFrame, submargins: bool, ceiling: int = 10, seed: int = 2021
+):
+    """
+    Helper function that applies cell suppression to input dataframe.
+    If submargins is True, function calls _local_suppression to subsections.
+    If submargins is False, function calls _local_suppression to entire input dataframe.
+
+    Returns:
+        pd.DataFrame where entries are True if df_n needs to be suppress and False if not.
+    """
 
     # see if there are sub-margins that we need to suppress
     if submargins:
