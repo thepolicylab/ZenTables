@@ -12,27 +12,14 @@ Examples:
 """
 import warnings
 from dataclasses import dataclass
-from typing import (
-    Any,
-    Dict,
-    Iterable,
-    List,
-    Optional,
-    Union,
-)
+from typing import Any, Dict, Generator, Iterable, List, Optional, Union
 
 import numpy as np
 import pandas as pd
 import pandas.core.common as com
 from jinja2 import ChoiceLoader, Environment, PackageLoader
-from pandas.io.formats.style import (
-    Styler,
-    FilePathOrBuffer,
-    save_to_buffer,
-)
-from pandas.io.formats.style_render import (
-    CSSStyles,
-)
+from pandas.io.formats.style import FilePathOrBuffer, Styler, save_to_buffer
+from pandas.io.formats.style_render import CSSStyles
 
 
 @dataclass
@@ -407,7 +394,8 @@ class ZenTablesAccessor:
         props: Optional[str] = None,
         digits: int = 1,
         suppress: bool = False,
-        ceiling: int = 10,
+        low: int = 1,
+        high: int = 10,
         **kwargs,
     ) -> pd.DataFrame:
         """Produces a frequency table.
@@ -471,7 +459,8 @@ class ZenTablesAccessor:
                 props=props,
                 digits=digits,
                 suppress=suppress,
-                ceiling=ceiling,
+                low=low,
+                high=high,
                 **kwargs,
             )
 
@@ -489,7 +478,8 @@ class ZenTablesAccessor:
                 props=props,
                 digits=digits,
                 suppress=suppress,
-                ceiling=ceiling,
+                low=low,
+                high=high,
                 **kwargs,
             )
             for value in values
@@ -509,7 +499,8 @@ class ZenTablesAccessor:
         props: Optional[str] = None,
         digits: int = 1,
         suppress: bool = False,
-        ceiling: int = 10,
+        low: int = 1,
+        high: int = 10,
         **kwargs,
     ) -> pd.DataFrame:
 
@@ -529,11 +520,12 @@ class ZenTablesAccessor:
             submargins_name=subtotals_name,
             **kwargs,
         ).astype("Int64")
-        mask = _do_suppression(pivot, submargins=True, ceiling=ceiling)
+        if suppress:
+            mask = _do_suppression(pivot, low, high)
 
-        if props is None:
-            if suppress:
-                return pivot.where(~mask).fillna("*")
+        if props is None and suppress:
+            return pivot.where(~mask).fillna("*")
+        elif props is None and not suppress:
             return pivot
 
         index_levels = len(index)
@@ -840,53 +832,63 @@ def _combine_n_pct(
     return df_n_str.add(df_pct_str).fillna(f"{suppress_symbol}")
 
 
-def _is_between(x, ceiling: int = 10):
+def _is_between(val, low: int = 1, high: int = 10):
     """
     Helper function that verifies if the input is below ceiling value
     """
-    return x in range(1, ceiling)
+    return low <= val < high
 
 
-def _add_random_noise(x, rng):
-    """
-    Helper function that adds random noise to entry according a Uniform distribution
-    """
-    return x + rng.uniform(0, 1)
+def _seed_to_rng(seed: Optional[Union[int, Generator]] = None) -> Generator:
+    if seed is None:
+        return np.random.default_rng()
+    if isinstance(seed, int):
+        return np.random.default_rng(seed)
 
 
-def _local_suppression(mini_df_n: pd.DataFrame, ceiling: int = 10, seed: int = 2021):
+def _local_suppression(
+    mini_df_n: pd.DataFrame,
+    low: int = 1,
+    high: int = 10,
+    seed: Optional[Union[int, Generator]] = None,
+):
     """
-    Helper function that applies cell suppression to
+    Helper function that applies cell suppression to mini_df_n.
+    mini_df_n is assumed to be a smaller portion of a larger
     """
-    rng = np.random.default_rng(seed)
-    mask = mini_df_n.applymap(lambda entry: _is_between(entry, ceiling))
+    rng = _seed_to_rng(seed)
+    mask = np.logical_and(mini_df_n >= low, mini_df_n < high)
+    tie_beaking_number = mini_df_n.abs().max().max() * 2
 
     while True:
         stop_suppression = False
         roi = np.where(mask.sum(axis=1) == 1)[0]
-        if len(roi) > 1:
-            assert stop_suppression == False
-        else:
-            # There are no longer rows that need to be suppressed.
-            stop_suppression = True
+        stop_suppression = len(roi) == 0
 
-        tie_breaker_df = (
-            mini_df_n.applymap(lambda entry: _add_random_noise(entry, rng))
-            + mask * 10e10
-        )
-        min_cols = tie_breaker_df.idxmin(axis=1)
-        # Suppress the identified minimums per row.
-        for pair in list(zip(mask.index[roi], min_cols.iloc[roi])):
-            mask.loc[pair] = True
+        if not stop_suppression:
+            tie_breaker_df = (
+                mini_df_n
+                + rng.uniform(0, 1e-2, size=mini_df_n.shape)
+                + (mask * tie_beaking_number).astype("float")
+            )
+            min_cols = tie_breaker_df.idxmin(axis=1)
+            # Suppress the identified minimums per row.
+            # for pair in list(zip(mask.index[roi], min_cols.iloc[roi])):
+            #     mask.loc[pair] = True
+            mask.loc[mask.index[roi], min_cols.iloc[roi]] = True
 
         coi = np.where(mask.sum(axis=0) == 1)[0]
-        tie_breaker_df = (
-            mini_df_n.applymap(lambda entry: _add_random_noise(entry, rng))
-            + mask * 10e10
-        )
-        min_rows = tie_breaker_df.idxmin(axis=0)
-        for pair in list(zip(min_rows.iloc[coi], mask.columns[coi])):
-            mask.loc[pair] = True
+        stop_suppression = len(coi) == 0
+        if not stop_suppression:
+            tie_breaker_df = (
+                mini_df_n
+                + rng.uniform(0, 1e-2, size=mini_df_n.shape)
+                + (mask * tie_beaking_number).astype("float")
+            )
+            min_rows = tie_breaker_df.idxmin(axis=0)
+            # for pair in list(zip(min_rows.iloc[coi], mask.columns[coi])):
+            #     mask.loc[pair] = True
+            mask.loc[min_rows.iloc[coi], mask.columns[coi]] = True
 
         if stop_suppression:
             break
@@ -895,33 +897,35 @@ def _local_suppression(mini_df_n: pd.DataFrame, ceiling: int = 10, seed: int = 2
 
 
 def _do_suppression(
-    df_n: pd.DataFrame, submargins: bool, ceiling: int = 10, seed: int = 2021
+    df_n: pd.DataFrame,
+    low: int = 1,
+    high: int = 10,
+    seed: int = 2021,
 ):
     """
     Helper function that applies cell suppression to input dataframe.
-    If submargins is True, function calls _local_suppression to subsections.
-    If submargins is False, function calls _local_suppression to entire input dataframe.
 
     Returns:
         pd.DataFrame where entries are True if df_n needs to be suppress and False if not.
     """
 
     # see if there are sub-margins that we need to suppress
-    if submargins:
+    if df_n.index.nlevels > 1:
         mask_list = []
         unique_index = df_n.index.get_level_values(0).unique()
         for idx in unique_index:
             mask_list.append(
                 _local_suppression(
                     df_n.iloc[df_n.index.get_level_values(0) == idx],
-                    ceiling=ceiling,
+                    low=low,
+                    high=high,
                     seed=seed,
                 )
             )
         mask = pd.concat(mask_list)
     else:
-        mask = _local_suppression(df_n, ceiling=ceiling, seed=seed)
-    return mask
+        mask = _local_suppression(df_n, low=low, high=high, seed=seed)
+    return mask.astype(bool)
 
 
 def _combine_mean_std(
