@@ -884,7 +884,7 @@ def _local_suppression(
             # Suppress the identified minimums per row.
             # for pair in list(zip(mask.index[roi], min_cols.iloc[roi])):
             #     mask.loc[pair] = True
-            mask.loc[mask.index[roi], min_cols.iloc[roi]] = True
+            mask.values[roi, min_cols.values[roi]] = True
 
         coi = np.where(mask.sum(axis=0) == 1)[0]
         if len(coi) > 0:
@@ -896,7 +896,7 @@ def _local_suppression(
             min_rows = tie_breaker_df.idxmin(axis=0)
             # for pair in list(zip(min_rows.iloc[coi], mask.columns[coi])):
             #     mask.loc[pair] = True
-            mask.loc[min_rows.iloc[coi], mask.columns[coi]] = True
+            mask.values[min_rows.values[coi], coi] = True
 
         if len(coi) == 0 and len(roi) == 0:
             break
@@ -909,13 +909,14 @@ def _do_suppression(
     low: int = 1,
     high: int = 10,
     seed: int = 2021,
-):
+) -> pd.DataFrame:
     """
     Helper function that applies cell suppression to input dataframe.
 
     Returns:
         pd.DataFrame where entries are True if df_n needs to be suppress and False if not.
     """
+    df_n = df_n.abs()
 
     # see if there are sub-margins that we need to suppress
     if df_n.index.nlevels > 1:
