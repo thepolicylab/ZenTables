@@ -12,12 +12,13 @@ Examples:
 """
 import warnings
 from dataclasses import dataclass
-from typing import Any, Dict, Generator, Iterable, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Union
 
 import numpy as np
 import pandas as pd
 import pandas.core.common as com
 from jinja2 import ChoiceLoader, Environment, PackageLoader
+from numpy.random import Generator
 from pandas.io.formats.style import FilePathOrBuffer, Styler, save_to_buffer
 from pandas.io.formats.style_render import CSSStyles
 
@@ -841,9 +842,16 @@ def _is_between(val, low: int = 1, high: int = 10):
 
 def _seed_to_rng(seed: Optional[Union[int, Generator]] = None) -> Generator:
     if seed is None:
+        # When there is no seed set, we start a RNG based on system entropy
         return np.random.default_rng()
+
     if isinstance(seed, int):
+        # When a seed is specified, begin RNG based on seed
         return np.random.default_rng(seed)
+
+    else:
+        # When the input is already a generator, simply return the generator
+        return seed
 
 
 def _local_suppression(
@@ -858,18 +866,19 @@ def _local_suppression(
     """
     rng = _seed_to_rng(seed)
     mask = np.logical_and(mini_df_n >= low, mini_df_n < high)
-    tie_beaking_number = mini_df_n.abs().max().max() * 2
+    not_sparse = mini_df_n.abs().max().max() * 2
 
     while True:
-        stop_suppression = False
         roi = np.where(mask.sum(axis=1) == 1)[0]
-        stop_suppression = len(roi) == 0
-
-        if not stop_suppression:
+        if len(roi) > 0:
             tie_breaker_df = (
                 mini_df_n
-                + rng.uniform(0, 1e-2, size=mini_df_n.shape)
-                + (mask * tie_beaking_number).astype("float")
+                + rng.uniform(
+                    0, 1e-2, size=mini_df_n.shape
+                )  # break ties with random number
+                + (mask * not_sparse).astype(
+                    "float"
+                )  # ensure numbers that are not sparse are made large
             )
             min_cols = tie_breaker_df.idxmin(axis=1)
             # Suppress the identified minimums per row.
@@ -878,19 +887,18 @@ def _local_suppression(
             mask.loc[mask.index[roi], min_cols.iloc[roi]] = True
 
         coi = np.where(mask.sum(axis=0) == 1)[0]
-        stop_suppression = len(coi) == 0
-        if not stop_suppression:
+        if len(coi) > 0:
             tie_breaker_df = (
                 mini_df_n
                 + rng.uniform(0, 1e-2, size=mini_df_n.shape)
-                + (mask * tie_beaking_number).astype("float")
+                + (mask * not_sparse).astype("float")
             )
             min_rows = tie_breaker_df.idxmin(axis=0)
             # for pair in list(zip(min_rows.iloc[coi], mask.columns[coi])):
             #     mask.loc[pair] = True
             mask.loc[min_rows.iloc[coi], mask.columns[coi]] = True
 
-        if stop_suppression:
+        if len(coi) == 0 and len(roi) == 0:
             break
 
     return mask

@@ -15,4 +15,4 @@ Typical usage examples::
 
 from .zentables import ZenTablesAccessor, _do_suppression, set_options
 
-__all__ = ["ZenTablesAccessor", "set_options", "_do_suppression"]
+__all__ = ["ZenTablesAccessor", "set_options"]
