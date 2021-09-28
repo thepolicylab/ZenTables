@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 import zentables as zen
 
@@ -79,7 +80,5 @@ def test_nan_values():
     # When the input array has mismatching lengths, pd.DataFrame automatically assumes NaN values
     input_array = [[1, 2, 3], [100, 200]]
     df = pd.DataFrame(input_array)
-    try:
+    with pytest.raises(ValueError):
         zen._do_suppression(df)
-    except ValueError:
-        return True
