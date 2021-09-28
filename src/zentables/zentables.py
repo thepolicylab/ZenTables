@@ -12,7 +12,7 @@ Examples:
 """
 import warnings
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Union, cast
 
 import numpy as np
 import pandas as pd
@@ -845,13 +845,16 @@ def _seed_to_rng(seed: Optional[Union[int, Generator]] = None) -> Generator:
         # When there is no seed set, we start a RNG based on system entropy
         return np.random.default_rng()
 
-    if isinstance(seed, np.integer):
+    if isinstance(seed, (int, np.integer)):
         # When a seed is specified, begin RNG based on seed
         return np.random.default_rng(seed=seed)
 
     else:
         # When the input is already a generator, simply return the generator
-        return seed
+        # N.B. mypy gets confused at this point because `np.integer` is the type
+        #      asserted above. So we simply cast to the Generator type (which is
+        #      effectively a noop).
+        return cast(Generator, seed)
 
 
 def _local_suppression(
