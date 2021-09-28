@@ -845,9 +845,9 @@ def _seed_to_rng(seed: Optional[Union[int, Generator]] = None) -> Generator:
         # When there is no seed set, we start a RNG based on system entropy
         return np.random.default_rng()
 
-    if isinstance(seed, int):
+    if isinstance(seed, int) or isinstance(seed, np.int64):
         # When a seed is specified, begin RNG based on seed
-        return np.random.default_rng(seed)
+        return np.random.default_rng(seed=seed)
 
     else:
         # When the input is already a generator, simply return the generator
@@ -916,6 +916,10 @@ def _do_suppression(
     Returns:
         pd.DataFrame where entries are True if df_n needs to be suppress and False if not.
     """
+    # See if there are any NaNs, and raise error
+    if df_n.isnull().values.any():
+        raise ValueError("DataFrame contains NaN values that cannot be suppressed")
+
     df_n = df_n.abs()
 
     # see if there are sub-margins that we need to suppress

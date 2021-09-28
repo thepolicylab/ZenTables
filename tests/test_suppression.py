@@ -49,3 +49,37 @@ def test_multiple_rows():
 
     mask = zen._do_suppression(df, low=1, high=5)
     assert (mask.values == expected_array).all()
+
+
+def test_random_seed_tie_breaker():
+    """
+    If there are several choices, then suppression should be random (i.e change depending on seed)
+    """
+    input_array = [
+        [3, 3, 3, 3, 3, 3],
+        [30, 30, 30, 30, 30, 30],
+        [30, 30, 30, 30, 30, 30],
+        [30, 30, 30, 30, 30, 30],
+    ]
+    df = pd.DataFrame(input_array)
+    first_seed, second_seed = np.random.randint(1e3, size=2)
+
+    mask_with_first_seed = zen._do_suppression(df, low=1, high=5, seed=first_seed)
+    mask_with_second_seed = zen._do_suppression(df, low=1, high=5, seed=second_seed)
+
+    # Verify that they are not all the same
+    assert (mask_with_first_seed.values != mask_with_second_seed.values).any()
+
+
+def test_nan_values():
+    """
+    If there are NaN values in the DataFrame, effective suppression cannot happen.
+    The user should be aware of the dimensions of input array, or apply appropriate `fillna()` commands.
+    """
+    # When the input array has mismatching lengths, pd.DataFrame automatically assumes NaN values
+    input_array = [[1, 2, 3], [100, 200]]
+    df = pd.DataFrame(input_array)
+    try:
+        zen._do_suppression(df)
+    except ValueError:
+        return True
