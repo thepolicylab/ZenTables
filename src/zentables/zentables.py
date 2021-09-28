@@ -12,31 +12,20 @@ Examples:
 """
 import warnings
 from dataclasses import dataclass
-from typing import (
-    Any,
-    Dict,
-    Iterable,
-    List,
-    Optional,
-    Union,
-)
+from typing import Any, Dict, Iterable, List, Optional, Union, cast
 
+import numpy as np
 import pandas as pd
 import pandas.core.common as com
 from jinja2 import ChoiceLoader, Environment, PackageLoader
-from pandas.io.formats.style import (
-    Styler,
-    FilePathOrBuffer,
-    save_to_buffer,
-)
-from pandas.io.formats.style_render import (
-    CSSStyles,
-)
+from numpy.random import Generator
+from pandas.io.formats.style import FilePathOrBuffer, Styler, save_to_buffer
+from pandas.io.formats.style_render import CSSStyles
 
 
 @dataclass
 class OptionsWrapper:
-    """A wrapper class around a dict to provide global options functionalities. """
+    """A wrapper class around a dict to provide global options functionalities."""
 
     font_size: str = "Arial, Helvetica, sans-serif"
     font_family: str = "11pt"
@@ -405,6 +394,9 @@ class ZenTablesAccessor:
         subtotals_name: Optional[str] = "Subtotal",
         props: Optional[str] = None,
         digits: int = 1,
+        suppress: bool = False,
+        low: int = 1,
+        high: int = 10,
         **kwargs,
     ) -> pd.DataFrame:
         """Produces a frequency table.
@@ -427,6 +419,8 @@ class ZenTablesAccessor:
             digits: Controls the number of digits for the percentages.
             subtotals: Controls whether subtotals will be calculated.
             subtotals_name: The labels of the subtotal rows.
+            suppress: Controls whether to apply cell suppression.
+            ceiling: Maximum value for suppression. Only used if suppress=True
 
         Raises:
             ValueError: When any of index, columns, or values is None.
@@ -465,6 +459,9 @@ class ZenTablesAccessor:
                 subtotals_name=subtotals_name,
                 props=props,
                 digits=digits,
+                suppress=suppress,
+                low=low,
+                high=high,
                 **kwargs,
             )
 
@@ -481,6 +478,9 @@ class ZenTablesAccessor:
                 subtotals_name=subtotals_name,
                 props=props,
                 digits=digits,
+                suppress=suppress,
+                low=low,
+                high=high,
                 **kwargs,
             )
             for value in values
@@ -499,22 +499,11 @@ class ZenTablesAccessor:
         subtotals_name: Optional[str] = "Subtotal",
         props: Optional[str] = None,
         digits: int = 1,
+        suppress: bool = False,
+        low: int = 1,
+        high: int = 10,
         **kwargs,
     ) -> pd.DataFrame:
-
-        if props is None:
-
-            return self._internal_pivot_table(
-                index=index,
-                columns=columns,
-                values=values,
-                aggfunc="count",
-                margins=totals,
-                margins_name=totals_name,
-                submargins=subtotals,
-                submargins_name=subtotals_name,
-                **kwargs,
-            ).astype("Int64")
 
         if not totals or not subtotals:
             warnings.warn(
@@ -532,6 +521,13 @@ class ZenTablesAccessor:
             submargins_name=subtotals_name,
             **kwargs,
         ).astype("Int64")
+        if suppress:
+            mask = _do_suppression(pivot, low, high)
+
+        if props is None and suppress:
+            return pivot.where(~mask).fillna("*")
+        elif props is None and not suppress:
+            return pivot
 
         index_levels = len(index)
 
@@ -546,6 +542,10 @@ class ZenTablesAccessor:
             elif props == "all":
                 pivot_props = pivot.div(pivot.iloc[-1, -1].squeeze())
 
+            if suppress:
+                return _combine_n_pct(
+                    pivot.where(~mask), pivot_props.where(~mask), digits
+                )
             return _combine_n_pct(pivot, pivot_props, digits)
 
         # If there is more than one level on the index,
@@ -565,7 +565,8 @@ class ZenTablesAccessor:
             sub_frames.append(sub_frame)
 
         pivot_props = pd.concat(sub_frames)
-
+        if suppress:
+            return _combine_n_pct(pivot.where(~mask), pivot_props.where(~mask), digits)
         return _combine_n_pct(pivot, pivot_props, digits)
 
     def _internal_pivot_table(
@@ -819,14 +820,131 @@ def _swap_column_levels(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _combine_n_pct(
-    df_n: pd.DataFrame, df_pct: pd.DataFrame, digits: int = 1
+    df_n: pd.DataFrame,
+    df_pct: pd.DataFrame,
+    digits: int = 1,
+    suppress_symbol: str = "*",
 ) -> pd.DataFrame:
     """
     Helper function that formats and combines n and pct values
     """
     df_n_str = df_n.astype(str)
     df_pct_str = df_pct.applymap(lambda x: f" ({x:.{digits}%})", na_action="ignore")
-    return df_n_str.add(df_pct_str)
+    return df_n_str.add(df_pct_str).fillna(f"{suppress_symbol}")
+
+
+def _is_between(val, low: int = 1, high: int = 10):
+    """
+    Helper function that verifies if the input is below ceiling value
+    """
+    return low <= val < high
+
+
+def _seed_to_rng(seed: Optional[Union[int, Generator]] = None) -> Generator:
+    if seed is None:
+        # When there is no seed set, we start a RNG based on system entropy
+        return np.random.default_rng()
+
+    if isinstance(seed, (int, np.integer)):
+        # When a seed is specified, begin RNG based on seed
+        return np.random.default_rng(seed=seed)
+
+    else:
+        # When the input is already a generator, simply return the generator
+        # N.B. mypy gets confused at this point because `np.integer` is the type
+        #      asserted above. So we simply cast to the Generator type (which is
+        #      effectively a noop).
+        return cast(Generator, seed)
+
+
+def _local_suppression(
+    mini_df_n: pd.DataFrame,
+    low: int = 1,
+    high: int = 10,
+    seed: Optional[Union[int, Generator]] = None,
+):
+    """
+    Helper function that applies cell suppression to mini_df_n.
+    mini_df_n is assumed to be a smaller portion of a larger
+    """
+    rng = _seed_to_rng(seed)
+    mask = np.logical_and(mini_df_n >= low, mini_df_n < high)
+    not_sparse = mini_df_n.abs().max().max() * 2
+
+    while True:
+        roi = np.where(mask.sum(axis=1) == 1)[0]
+        if len(roi) > 0:
+            tie_breaker_df = (
+                mini_df_n
+                + rng.uniform(
+                    0, 1e-2, size=mini_df_n.shape
+                )  # break ties with random number
+                + (mask * not_sparse).astype(
+                    "float"
+                )  # ensure numbers that are not sparse are made large
+            )
+            min_cols = tie_breaker_df.idxmin(axis=1)
+            # Suppress the identified minimums per row.
+            # for pair in list(zip(mask.index[roi], min_cols.iloc[roi])):
+            #     mask.loc[pair] = True
+            mask.values[roi, min_cols.values[roi]] = True
+
+        coi = np.where(mask.sum(axis=0) == 1)[0]
+        if len(coi) > 0:
+            tie_breaker_df = (
+                mini_df_n
+                + rng.uniform(0, 1e-2, size=mini_df_n.shape)
+                + (mask * not_sparse).astype("float")
+            )
+            min_rows = tie_breaker_df.idxmin(axis=0)
+            # for pair in list(zip(min_rows.iloc[coi], mask.columns[coi])):
+            #     mask.loc[pair] = True
+            mask.values[min_rows.values[coi], coi] = True
+
+        if len(coi) == 0 and len(roi) == 0:
+            break
+
+    return mask
+
+
+def _do_suppression(
+    df_n: pd.DataFrame,
+    low: int = 1,
+    high: int = 10,
+    seed: int = 2021,
+) -> pd.DataFrame:
+    """
+    Helper function that applies cell suppression to input dataframe.
+
+    Raises:
+        ValueError: when the input DataFrame includes NaN values
+
+    Returns:
+        pd.DataFrame where entries are True if df_n needs to be suppress and False if not.
+    """
+    # See if there are any NaNs, and raise error
+    if df_n.isnull().values.any():
+        raise ValueError("DataFrame contains NaN values that cannot be suppressed")
+
+    df_n = df_n.abs()
+
+    # see if there are sub-margins that we need to suppress
+    if df_n.index.nlevels > 1:
+        mask_list = []
+        unique_index = df_n.index.get_level_values(0).unique()
+        for idx in unique_index:
+            mask_list.append(
+                _local_suppression(
+                    df_n.iloc[df_n.index.get_level_values(0) == idx],
+                    low=low,
+                    high=high,
+                    seed=seed,
+                )
+            )
+        mask = pd.concat(mask_list)
+    else:
+        mask = _local_suppression(df_n, low=low, high=high, seed=seed)
+    return mask.astype(bool)
 
 
 def _combine_mean_std(
