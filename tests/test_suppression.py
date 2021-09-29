@@ -81,4 +81,54 @@ def test_nan_values():
     input_array = [[1, 2, 3], [100, 200]]
     df = pd.DataFrame(input_array)
     with pytest.raises(ValueError):
-        zen._do_suppression(df)
+        zen._do_suppression(df, fillna=False)
+
+    expected_array = [[True, True, True], [True, True, True]]
+    # Otherwise, can still return result
+    mask = zen._do_suppression(df, low=1, high=5)
+    assert (mask.values == expected_array).all()
+
+
+def test_col_and_row_names():
+    """
+    Verify that the code runs with column names and row names
+    """
+    input_array = np.array([[1, 4, 5], [20, 40, 9], [-5, 8, 9]])
+
+    expected_array = np.array(
+        [[True, True, False], [False, False, False], [True, True, False]]
+    )
+
+    df = pd.DataFrame(input_array, columns=["A", "B", "C"], index=["A", "B", "C"])
+
+    mask = zen._do_suppression(df, low=1, high=5)
+    assert (mask.values == expected_array).all()
+
+
+def test_no_suppression():
+    input_array = np.array([[100, 400, 50], [20, 40, 90], [-500, 800, 900]])
+
+    expected_array = np.array(
+        [[False, False, False], [False, False, False], [False, False, False]]
+    )
+
+    df = pd.DataFrame(input_array)
+
+    mask = zen._do_suppression(df, low=1, high=5)
+    assert (mask.values == expected_array).all()
+
+
+def test_single_row():
+    input_array = np.array([4, 0, 10, 30])
+    expected_array = np.array([True, True, True, True])
+    df = pd.DataFrame(input_array)
+
+    mask = zen._do_suppression(df, low=1, high=5)
+    assert (mask.values == expected_array).all()
+
+    input_array = np.array([[4], [0], [10], [30]])
+    expected_array = np.array([[True], [True], [True], [True]])
+    df = pd.DataFrame(input_array)
+
+    mask = zen._do_suppression(df, low=1, high=5)
+    assert (mask.values == expected_array).all()

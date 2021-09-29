@@ -505,10 +505,10 @@ class ZenTablesAccessor:
         **kwargs,
     ) -> pd.DataFrame:
 
-        if not totals or not subtotals:
-            warnings.warn(
-                "`props` is set. Overriding `totals` and `subtotals` settings."
-            )
+        # if not totals or not subtotals:
+        #     warnings.warn(
+        #         "`props` is set. Overriding `totals` and `subtotals` settings."
+        #     )
 
         pivot = self._internal_pivot_table(
             index=index,
@@ -699,6 +699,9 @@ class ZenTablesAccessor:
         submargins: bool = False,
         submargins_name: Optional[str] = "All",
         na_rep: str = "N/A",
+        suppress: bool = False,
+        low: int = 1,
+        high: int = 10,
         **kwargs,
     ) -> pd.DataFrame:
         """Produces a table with n, mean, and standard deviation.
@@ -741,15 +744,29 @@ class ZenTablesAccessor:
         mean = pivot.xs("mean", axis=1)
         std = pivot.xs("std", axis=1)
 
-        mean_std = _combine_mean_std(mean, std, digits=digits, na_rep=na_rep)
-
-        result = pd.concat(
-            {
-                "n": count,
-                "Mean (SD)": mean_std,
-            },
-            axis=1,
+        mean_std = _combine_mean_std(
+            mean,
+            std,
+            digits=digits,
+            na_rep=na_rep,
         )
+        if suppress:
+            mask = _do_suppression(count, low=low, high=high)
+            result = pd.concat(
+                {
+                    "n": count.astype(int).where(~mask).fillna("*"),
+                    "Mean (SD)": mean_std.where(~mask).fillna("*"),
+                },
+                axis=1,
+            )
+        else:
+            result = pd.concat(
+                {
+                    "n": count,
+                    "Mean (SD)": mean_std,
+                },
+                axis=1,
+            )
 
         return _swap_column_levels(result)
 
@@ -857,6 +874,7 @@ def _seed_to_rng(seed: Optional[Union[int, Generator]] = None) -> Generator:
         return cast(Generator, seed)
 
 
+
 def _local_suppression(
     mini_df_n: pd.DataFrame,
     low: int = 1,
@@ -867,43 +885,55 @@ def _local_suppression(
     Helper function that applies cell suppression to mini_df_n.
     mini_df_n is assumed to be a smaller portion of a larger
     """
+
+    df = mini_df_n.copy()
+    colnames = mini_df_n.columns
+    rownames = mini_df_n.index
+    df.columns = np.arange(len(colnames))
+    df.index = np.arange(len(rownames))
+
     rng = _seed_to_rng(seed)
-    mask = np.logical_and(mini_df_n >= low, mini_df_n < high)
-    not_sparse = mini_df_n.abs().max().max() * 2
+    mask = np.logical_and(df >= low, df < high)
+    not_sparse = df.abs().max().max() * 2
 
     while True:
         roi = np.where(mask.sum(axis=1) == 1)[0]
+
         if len(roi) > 0:
             tie_breaker_df = (
-                mini_df_n
-                + rng.uniform(
-                    0, 1e-2, size=mini_df_n.shape
-                )  # break ties with random number
+                df
+                + rng.uniform(0, 1e-2, size=df.shape)  # break ties with random number
                 + (mask * not_sparse).astype(
                     "float"
                 )  # ensure numbers that are not sparse are made large
             )
             min_cols = tie_breaker_df.idxmin(axis=1)
             # Suppress the identified minimums per row.
-            # for pair in list(zip(mask.index[roi], min_cols.iloc[roi])):
-            #     mask.loc[pair] = True
             mask.values[roi, min_cols.values[roi]] = True
 
         coi = np.where(mask.sum(axis=0) == 1)[0]
         if len(coi) > 0:
             tie_breaker_df = (
-                mini_df_n
-                + rng.uniform(0, 1e-2, size=mini_df_n.shape)
+                df
+                + rng.uniform(0, 1e-2, size=df.shape)
                 + (mask * not_sparse).astype("float")
             )
             min_rows = tie_breaker_df.idxmin(axis=0)
-            # for pair in list(zip(min_rows.iloc[coi], mask.columns[coi])):
-            #     mask.loc[pair] = True
             mask.values[min_rows.values[coi], coi] = True
 
+        if (len(coi) != 0 or len(roi) != 0) and 1 in mask.shape:
+            # Corner Case: if there is one row or column, and one is masked, the rest needs to be masked
+            return pd.DataFrame(
+                np.ones(mask.shape, dtype=bool), columns=colnames, index=rownames
+            )
         if len(coi) == 0 and len(roi) == 0:
             break
 
+        # reassign column names and row names
+    mask.index = rownames
+    mask.columns = colnames
+    assert (mask.columns == mini_df_n.columns).all()
+    assert (mask.index == mini_df_n.index).all()
     return mask
 
 
@@ -912,6 +942,7 @@ def _do_suppression(
     low: int = 1,
     high: int = 10,
     seed: int = 2021,
+    fillna: bool = True,
 ) -> pd.DataFrame:
     """
     Helper function that applies cell suppression to input dataframe.
@@ -923,6 +954,8 @@ def _do_suppression(
         pd.DataFrame where entries are True if df_n needs to be suppress and False if not.
     """
     # See if there are any NaNs, and raise error
+    if fillna:
+        df_n.fillna(0, inplace=True)
     if df_n.isnull().values.any():
         raise ValueError("DataFrame contains NaN values that cannot be suppressed")
 
@@ -948,7 +981,10 @@ def _do_suppression(
 
 
 def _combine_mean_std(
-    df_mean: pd.DataFrame, df_std: pd.DataFrame, digits: int = 1, na_rep: str = "N/A"
+    df_mean: pd.DataFrame,
+    df_std: pd.DataFrame,
+    digits: int = 1,
+    na_rep: str = "N/A",
 ) -> pd.DataFrame:
     """
     Helper function that formats and combines mean and standard deviation values
@@ -960,7 +996,6 @@ def _combine_mean_std(
     is_missing = df_mean_str.isna() & df_std_str.isna()
     result[is_sample_size_1] = df_mean_str[is_sample_size_1].add(f" ({na_rep})")
     result[is_missing] = na_rep
-
     return result
 
 
