@@ -874,7 +874,6 @@ def _seed_to_rng(seed: Optional[Union[int, Generator]] = None) -> Generator:
         return cast(Generator, seed)
 
 
-
 def _local_suppression(
     mini_df_n: pd.DataFrame,
     low: int = 1,
