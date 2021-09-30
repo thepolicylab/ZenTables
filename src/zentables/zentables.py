@@ -505,10 +505,10 @@ class ZenTablesAccessor:
         **kwargs,
     ) -> pd.DataFrame:
 
-        # if not totals or not subtotals:
-        #     warnings.warn(
-        #         "`props` is set. Overriding `totals` and `subtotals` settings."
-        #     )
+        if not totals or not subtotals:
+            warnings.warn(
+                "`props` is set. Overriding `totals` and `subtotals` settings."
+            )
 
         pivot = self._internal_pivot_table(
             index=index,
@@ -928,7 +928,7 @@ def _local_suppression(
         if len(coi) == 0 and len(roi) == 0:
             break
 
-        # reassign column names and row names
+    # reassign column names and row names
     mask.index = rownames
     mask.columns = colnames
     assert (mask.columns == mini_df_n.columns).all()
