@@ -4,6 +4,8 @@ version = "0.2.0b3"
 description = "Stress-free descriptive tables in Python."
 authors = [
     "Paul Xu <yang_xu@brown.edu>",
+    "Edward Huh <edward_huh@brown.edu>",
+    "Kevin Wilson <kevin_wilson@brown.edu>",
     "The Policy Lab <thepolicylab@brown.edu>"
 ]
 license = "MIT"

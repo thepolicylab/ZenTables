@@ -195,6 +195,7 @@ Contributions are welcome, and they are greatly appreciated! If you have a new i
 
 Principally written by Paul Xu at [The Policy Lab](https://thepolicylab.brown.edu). Other contributors:
   * Kevin H. Wilson
+  * Edward Huh
 
 ## Special thanks
 

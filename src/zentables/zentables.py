@@ -351,10 +351,7 @@ class ZenTablesAccessor:
         """
         self._pandas_obj = pandas_obj
 
-    def pretty(
-        self,
-        **kwargs,
-    ) -> PrettyStyler:
+    def pretty(self, **kwargs) -> PrettyStyler:
         """Formats a DataFrame for it to look pretty.
 
         When `fast` is `True`, returns the native pandas `Styler` in combination with
@@ -378,10 +375,7 @@ class ZenTablesAccessor:
             The styler object
         """
 
-        return PrettyStyler(
-            self._pandas_obj,
-            **kwargs,
-        )
+        return PrettyStyler(self._pandas_obj, **kwargs)
 
     def freq_table(
         self,
@@ -620,9 +614,7 @@ class ZenTablesAccessor:
             ).reset_index()
 
             if margins:
-                submargin = submargin.iloc[
-                    :-1,
-                ]
+                submargin = submargin.iloc[:-1,]
 
             for i, col in enumerate(index[level:]):
                 if i == 0:
@@ -744,12 +736,7 @@ class ZenTablesAccessor:
         mean = pivot.xs("mean", axis=1)
         std = pivot.xs("std", axis=1)
 
-        mean_std = _combine_mean_std(
-            mean,
-            std,
-            digits=digits,
-            na_rep=na_rep,
-        )
+        mean_std = _combine_mean_std(mean, std, digits=digits, na_rep=na_rep)
         if suppress:
             mask = _do_suppression(count, low=low, high=high)
             result = pd.concat(
@@ -760,13 +747,7 @@ class ZenTablesAccessor:
                 axis=1,
             )
         else:
-            result = pd.concat(
-                {
-                    "n": count,
-                    "Mean (SD)": mean_std,
-                },
-                axis=1,
-            )
+            result = pd.concat({"n": count, "Mean (SD)": mean_std}, axis=1)
 
         return _swap_column_levels(result)
 
@@ -848,13 +829,6 @@ def _combine_n_pct(
     df_n_str = df_n.astype(str)
     df_pct_str = df_pct.applymap(lambda x: f" ({x:.{digits}%})", na_action="ignore")
     return df_n_str.add(df_pct_str).fillna(f"{suppress_symbol}")
-
-
-def _is_between(val, low: int = 1, high: int = 10):
-    """
-    Helper function that verifies if the input is below ceiling value
-    """
-    return low <= val < high
 
 
 def _seed_to_rng(seed: Optional[Union[int, Generator]] = None) -> Generator:
@@ -980,10 +954,7 @@ def _do_suppression(
 
 
 def _combine_mean_std(
-    df_mean: pd.DataFrame,
-    df_std: pd.DataFrame,
-    digits: int = 1,
-    na_rep: str = "N/A",
+    df_mean: pd.DataFrame, df_std: pd.DataFrame, digits: int = 1, na_rep: str = "N/A"
 ) -> pd.DataFrame:
     """
     Helper function that formats and combines mean and standard deviation values
