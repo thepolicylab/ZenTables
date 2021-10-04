@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import pytest
+import random
 
 import zentables as zen
 
@@ -132,3 +133,26 @@ def test_single_row():
 
     mask = zen._do_suppression(df, low=1, high=5)
     assert (mask.values == expected_array).all()
+
+def test_nan_in_mean_sd_table():
+    total_length = 20
+    cuisine = ['Chinese', 'Korean', 'Italian']
+    city = ['Boston', 'Providence']
+    who = ['Paul', 'Ed', 'Kevin']
+
+    # Set seed to make this example reproducible
+    d = {"city": random.choices(city, k=total_length),
+         "cuisine": random.choices(cuisine, k=total_length),
+         "price": np.random.randint(low=10, high=40, size=total_length),
+         "who": random.choices(who, k=total_length)
+         }
+    df = pd.DataFrame(d)
+
+    outcome_df = df.zen.mean_sd_table(
+        index=['cuisine', 'who'], columns='city', values='price', suppress=True, high=2
+    )
+    # Ensure that those that have '0' values have 'NA' values in sd
+    null_index = np.where(outcome_df[outcome_df.columns[outcome_df.columns.get_level_values(1) == 'n']]==0.0)
+    nan_index = np.where(outcome_df[outcome_df.columns[outcome_df.columns.get_level_values(1) == 'Mean (SD)']]== 'N/A')
+    assert np.array_equal(null_index, nan_index)
+
