@@ -1,9 +1,13 @@
 import numpy as np
 import pandas as pd
 import pytest
-import random
 
 import zentables as zen
+
+
+@pytest.fixture(scope="function")
+def random() -> np.random.Generator:
+    return np.random.default_rng(123456)
 
 
 def test_negative_numbers():
@@ -134,25 +138,51 @@ def test_single_row():
     mask = zen._do_suppression(df, low=1, high=5)
     assert (mask.values == expected_array).all()
 
+
 def test_nan_in_mean_sd_table():
     total_length = 20
-    cuisine = ['Chinese', 'Korean', 'Italian']
-    city = ['Boston', 'Providence']
-    who = ['Paul', 'Ed', 'Kevin']
+    cuisine = ["Chinese", "Korean", "Italian"]
+    city = ["Boston", "Providence"]
+    who = ["Paul", "Ed", "Kevin"]
 
-    # Set seed to make this example reproducible
-    d = {"city": random.choices(city, k=total_length),
-         "cuisine": random.choices(cuisine, k=total_length),
-         "price": np.random.randint(low=10, high=40, size=total_length),
-         "who": random.choices(who, k=total_length)
-         }
+    d = {
+        "city": np.random.choice(city, size=total_length),
+        "cuisine": np.random.choice(cuisine, size=total_length),
+        "price": np.random.randint(low=10, high=40, size=total_length),
+        "who": np.random.choice(who, size=total_length),
+    }
     df = pd.DataFrame(d)
 
-    outcome_df = df.zen.mean_sd_table(
-        index=['cuisine', 'who'], columns='city', values='price', suppress=True, high=2
+    number_of_empty_groupings = (
+        df.zen.freq_table(
+            index=["cuisine", "who"],
+            columns="city",
+            values="price",
+            subtotals=False,
+            totals=False,
+        )
+        .isna()
+        .sum()
+        .sum()
     )
+
+    outcome_df = df.zen.mean_sd_table(
+        index=["cuisine", "who"], columns="city", values="price", suppress=False, high=2
+    )
+
     # Ensure that those that have '0' values have 'NA' values in sd
-    null_index = np.where(outcome_df[outcome_df.columns[outcome_df.columns.get_level_values(1) == 'n']]==0.0)
-    nan_index = np.where(outcome_df[outcome_df.columns[outcome_df.columns.get_level_values(1) == 'Mean (SD)']]== 'N/A')
-    assert np.array_equal(null_index, nan_index)
+    is_null = outcome_df.xs("n", level=1, axis=1) == 0.0
+    is_nan = outcome_df.xs("Mean (SD)", level=1, axis=1) == "N/A"
+
+    pd.testing.assert_frame_equal(left=is_null, right=is_nan, check_dtype=False)
+
+    # verify that the number of empty
+    assert is_nan.sum().sum() == is_null.sum().sum() == number_of_empty_groupings
+
+    ## Realizing that further development is necessary to ensure that 0 is not suppressed
+    ## and if this should even always be true.
+    suppressed_outcome_df = df.zen.mean_sd_table(
+        index=["cuisine", "who"], columns="city", values="price", suppress=True, high=2
+    )
+
 
