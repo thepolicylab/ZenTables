@@ -2,8 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import zentables as zen
-
+from zentables.zentables import _do_suppression
 
 @pytest.fixture(scope="function")
 def random() -> np.random.Generator:
@@ -23,7 +22,7 @@ def test_negative_numbers():
 
     df = pd.DataFrame(input_array)
 
-    mask = zen._do_suppression(df, low=1, high=5)
+    mask = _do_suppression(df, low=1, high=5)
     assert (mask.values == expected_array).all()
 
 
@@ -41,7 +40,7 @@ def test_multiple_rows():
 
     df = pd.DataFrame(input_array)
 
-    mask = zen._do_suppression(df, low=1, high=5)
+    mask = _do_suppression(df, low=1, high=5)
     assert (mask.values == expected_array).all()
 
     # But what if the -5 and 8 are in diferent rows?
@@ -53,7 +52,7 @@ def test_multiple_rows():
 
     df = pd.DataFrame(input_array)
 
-    mask = zen._do_suppression(df, low=1, high=5)
+    mask = _do_suppression(df, low=1, high=5)
     assert (mask.values == expected_array).all()
 
 
@@ -70,8 +69,8 @@ def test_random_seed_tie_breaker():
     df = pd.DataFrame(input_array)
     first_seed, second_seed = np.random.randint(1e3, size=2)
 
-    mask_with_first_seed = zen._do_suppression(df, low=1, high=5, seed=first_seed)
-    mask_with_second_seed = zen._do_suppression(df, low=1, high=5, seed=second_seed)
+    mask_with_first_seed = _do_suppression(df, low=1, high=5, seed=first_seed)
+    mask_with_second_seed = _do_suppression(df, low=1, high=5, seed=second_seed)
 
     # Verify that they are not all the same
     assert (mask_with_first_seed.values != mask_with_second_seed.values).any()
@@ -86,11 +85,11 @@ def test_nan_values():
     input_array = [[1, 2, 3], [100, 200]]
     df = pd.DataFrame(input_array)
     with pytest.raises(ValueError):
-        zen._do_suppression(df, fillna=False)
+        _do_suppression(df, fillna=False)
 
     expected_array = [[True, True, True], [True, True, True]]
     # Otherwise, can still return result
-    mask = zen._do_suppression(df, low=1, high=5)
+    mask = _do_suppression(df, low=1, high=5)
     assert (mask.values == expected_array).all()
 
 
@@ -106,7 +105,7 @@ def test_col_and_row_names():
 
     df = pd.DataFrame(input_array, columns=["A", "B", "C"], index=["A", "B", "C"])
 
-    mask = zen._do_suppression(df, low=1, high=5)
+    mask = _do_suppression(df, low=1, high=5)
     assert (mask.values == expected_array).all()
 
 
@@ -119,7 +118,7 @@ def test_no_suppression():
 
     df = pd.DataFrame(input_array)
 
-    mask = zen._do_suppression(df, low=1, high=5)
+    mask = _do_suppression(df, low=1, high=5)
     assert (mask.values == expected_array).all()
 
 
@@ -128,14 +127,14 @@ def test_single_row():
     expected_array = np.array([True, True, True, True])
     df = pd.DataFrame(input_array)
 
-    mask = zen._do_suppression(df, low=1, high=5)
+    mask = _do_suppression(df, low=1, high=5)
     assert (mask.values == expected_array).all()
 
     input_array = np.array([[4], [0], [10], [30]])
     expected_array = np.array([[True], [True], [True], [True]])
     df = pd.DataFrame(input_array)
 
-    mask = zen._do_suppression(df, low=1, high=5)
+    mask = _do_suppression(df, low=1, high=5)
     assert (mask.values == expected_array).all()
 
 
