@@ -92,6 +92,7 @@ class PrettyStyler(Styler):
         show_index_names: Optional[bool] = None,
         show_column_names: Optional[bool] = None,
         show_copy_button: Optional[bool] = None,
+        row_borders: Optional[List[int]] = None,
     ):
         Styler.__init__(
             self,
@@ -125,6 +126,15 @@ class PrettyStyler(Styler):
             if show_copy_button is not None
             else _options.show_copy_button
         )
+
+        if row_borders is not None:
+            for row_number in row_borders:
+                if row_number >= len(data):
+                    raise ValueError(
+                        f"Row number {row_number} is out of range for the data."
+                    )
+
+        self.row_borders = row_borders
 
     env = Environment(
         loader=ChoiceLoader(
@@ -279,6 +289,11 @@ class PrettyStyler(Styler):
             for cell in body[-1]:
                 _add_style_in_element(cell, "border-bottom: 1.5pt solid black")
 
+        if self.row_borders is not None:
+            for row_number in self.row_borders:
+                for cell in body[row_number]:
+                    _add_style_in_element(cell, "border-bottom: 1pt solid black")
+
         # If _column_names is false, remove column names
         if not self._column_names and body:
 
@@ -389,6 +404,7 @@ class ZenTablesAccessor:
         props: Optional[str] = None,
         digits: int = 1,
         suppress: bool = False,
+        suppress_symbol: str = "*",
         low: int = 1,
         high: int = 10,
         **kwargs,
@@ -454,6 +470,7 @@ class ZenTablesAccessor:
                 props=props,
                 digits=digits,
                 suppress=suppress,
+                suppress_symbol=suppress_symbol,
                 low=low,
                 high=high,
                 **kwargs,
@@ -473,6 +490,7 @@ class ZenTablesAccessor:
                 props=props,
                 digits=digits,
                 suppress=suppress,
+                suppress_symbol=suppress_symbol,
                 low=low,
                 high=high,
                 **kwargs,
@@ -487,22 +505,38 @@ class ZenTablesAccessor:
         index,
         columns,
         values: str,
-        totals: bool = True,
+        totals: bool = False,
         totals_name: str = "Total",
         subtotals: bool = False,
         subtotals_name: Optional[str] = "Subtotal",
         props: Optional[str] = None,
         digits: int = 1,
         suppress: bool = False,
+        suppress_symbol: str = "*",
         low: int = 1,
         high: int = 10,
         **kwargs,
     ) -> pd.DataFrame:
 
-        if not totals or not subtotals:
-            warnings.warn(
-                "`props` is set. Overriding `totals` and `subtotals` settings."
-            )
+        if props is None:
+
+            pivot = self._internal_pivot_table(
+                index=index,
+                columns=columns,
+                values=values,
+                aggfunc="count",
+                margins=totals,
+                margins_name=totals_name,
+                submargins=subtotals,
+                submargins_name=subtotals_name,
+                **kwargs,
+            ).astype("Int64")
+
+            if suppress:
+                mask = _do_suppression(pivot, low, high)
+                return pivot.where(~mask).astype(str).replace("<NA>", suppress_symbol)
+
+            return pivot
 
         pivot = self._internal_pivot_table(
             index=index,
@@ -515,13 +549,6 @@ class ZenTablesAccessor:
             submargins_name=subtotals_name,
             **kwargs,
         ).astype("Int64")
-        if suppress:
-            mask = _do_suppression(pivot, low, high)
-
-        if props is None and suppress:
-            return pivot.where(~mask).astype(str).replace("<NA>", "*")
-        elif props is None and not suppress:
-            return pivot
 
         index_levels = len(index)
 
@@ -536,9 +563,30 @@ class ZenTablesAccessor:
             elif props == "all":
                 pivot_props = pivot.div(pivot.iloc[-1, -1].squeeze())
 
+            if not totals:
+
+                if suppress:
+                    mask = _do_suppression(pivot, low, high)
+                    return (
+                        _combine_n_pct(
+                            pivot.where(~mask),
+                            pivot_props.where(~mask),
+                            digits,
+                            suppress_symbol,
+                        )
+                        .iloc[:-1, :-1]
+                        .copy()
+                    )
+
+                return _combine_n_pct(pivot, pivot_props, digits).iloc[:-1, :-1].copy()
+
             if suppress:
+                mask = _do_suppression(pivot, low, high)
                 return _combine_n_pct(
-                    pivot.where(~mask), pivot_props.where(~mask), digits
+                    pivot.where(~mask),
+                    pivot_props.where(~mask),
+                    digits,
+                    suppress_symbol,
                 )
             return _combine_n_pct(pivot, pivot_props, digits)
 
@@ -546,22 +594,42 @@ class ZenTablesAccessor:
         # calculate percentages for each label on level0
         level0_values = pivot.index.get_level_values(0).unique().to_list()
 
-        sub_frames = []
+        sub_freqs = []
+        sub_props = []
 
-        for level in level0_values:
-            sub_frame = pivot.xs(level, drop_level=False)
+        for level in level0_values if totals else level0_values[:-1]:
+            sub_freq = pivot.xs(level, drop_level=False)
+
             if props == "index":
-                sub_frame = sub_frame.div(sub_frame.iloc[:, -1], axis=0)
+                sub_prop = sub_freq.div(sub_freq.iloc[:, -1], axis=0)
             elif props == "columns":
-                sub_frame = sub_frame.div(sub_frame.iloc[-1, :], axis=1)
+                sub_prop = sub_freq.div(sub_freq.iloc[-1, :], axis=1)
             else:
-                sub_frame = sub_frame.div(sub_frame.iloc[-1, -1].squeeze())
-            sub_frames.append(sub_frame)
+                sub_prop = sub_freq.div(sub_freq.iloc[-1, -1].squeeze())
 
-        pivot_props = pd.concat(sub_frames)
+            if not subtotals:
+                sub_freq = sub_freq.drop(index=[subtotals_name], level=1)
+                sub_prop = sub_prop.drop(index=[subtotals_name], level=1)
+
+            sub_freqs.append(sub_freq)
+            sub_props.append(sub_prop)
+
+        if totals:
+            freqs_frame = pd.concat(sub_freqs)
+            props_frame = pd.concat(sub_props)
+        else:
+            freqs_frame = pd.concat(sub_freqs).iloc[:, :-1].copy()
+            props_frame = pd.concat(sub_props).iloc[:, :-1].copy()
+
         if suppress:
-            return _combine_n_pct(pivot.where(~mask), pivot_props.where(~mask), digits)
-        return _combine_n_pct(pivot, pivot_props, digits)
+            mask = _do_suppression(freqs_frame, low, high)
+            return _combine_n_pct(
+                freqs_frame.where(~mask),
+                props_frame.where(~mask),
+                digits,
+                suppress_symbol,
+            )
+        return _combine_n_pct(freqs_frame, props_frame, digits)
 
     def _internal_pivot_table(
         self,
@@ -572,7 +640,7 @@ class ZenTablesAccessor:
         margins: bool = False,
         margins_name: str = "All",
         submargins: bool = False,
-        submargins_name="All",
+        submargins_name: str = "All",
         **kwargs,
     ) -> pd.DataFrame:
         """
@@ -614,9 +682,7 @@ class ZenTablesAccessor:
             ).reset_index()
 
             if margins:
-                submargin = submargin.iloc[
-                    :-1,
-                ]
+                submargin = submargin.iloc[:-1, :]
 
             for i, col in enumerate(index[level:]):
                 if i == 0:
@@ -827,14 +893,17 @@ def _combine_n_pct(
     df_n: pd.DataFrame,
     df_pct: pd.DataFrame,
     digits: int = 1,
-    suppress_symbol: str = "*",
+    suppress_symbol: Optional[str] = None,
 ) -> pd.DataFrame:
     """
     Helper function that formats and combines n and pct values
     """
     df_n_str = df_n.astype(str)
     df_pct_str = df_pct.applymap(lambda x: f" ({x:.{digits}%})", na_action="ignore")
-    return df_n_str.add(df_pct_str).fillna(f"{suppress_symbol}")
+
+    if suppress_symbol is not None:
+        return df_n_str.add(df_pct_str).fillna(f"{suppress_symbol}")
+    return df_n_str.add(df_pct_str)
 
 
 def _seed_to_rng(seed: Optional[Union[int, Generator]] = None) -> Generator:
