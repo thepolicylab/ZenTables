@@ -519,7 +519,7 @@ class ZenTablesAccessor:
             mask = _do_suppression(pivot, low, high)
 
         if props is None and suppress:
-            return pivot.where(~mask).fillna("*")
+            return pivot.where(~mask).astype(str).replace("<NA>", "*")
         elif props is None and not suppress:
             return pivot
 
@@ -614,7 +614,9 @@ class ZenTablesAccessor:
             ).reset_index()
 
             if margins:
-                submargin = submargin.iloc[:-1,]
+                submargin = submargin.iloc[
+                    :-1,
+                ]
 
             for i, col in enumerate(index[level:]):
                 if i == 0:
@@ -735,6 +737,10 @@ class ZenTablesAccessor:
         count = pivot.xs("count", axis=1).astype("Int64").fillna(0)
         mean = pivot.xs("mean", axis=1)
         std = pivot.xs("std", axis=1)
+        # issues can arise when the shape is inconsistent because some groupings are entirely empty
+        assert (
+            count.shape == mean.shape == std.shape
+        ), "Ensure that all categories have at least some entry"
 
         mean_std = _combine_mean_std(mean, std, digits=digits, na_rep=na_rep)
         if suppress:
