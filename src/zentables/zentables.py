@@ -638,9 +638,9 @@ class ZenTablesAccessor:
         values=None,
         aggfunc=None,
         margins: bool = False,
-        margins_name: str = "All",
+        margins_name: Optional[str] = "All",
         submargins: bool = False,
-        submargins_name: str = "All",
+        submargins_name: Optional[str] = "All",
         **kwargs,
     ) -> pd.DataFrame:
         """
