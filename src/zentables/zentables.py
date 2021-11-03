@@ -863,11 +863,14 @@ def _local_suppression(
     """
     Helper function that applies cell suppression to mini_df_n.
     mini_df_n is assumed to be a smaller portion of a larger
+
+    The mask returns True when needs to be suppressed, and False when not
     """
 
     df = mini_df_n.copy()
     colnames = mini_df_n.columns
     rownames = mini_df_n.index
+    # re-initialize column and row names to integers
     df.columns = np.arange(len(colnames))
     df.index = np.arange(len(rownames))
 
@@ -913,7 +916,14 @@ def _local_suppression(
     mask.columns = colnames
     assert (mask.columns == mini_df_n.columns).all()
     assert (mask.index == mini_df_n.index).all()
-    return mask
+
+    # Override the mask for all coordinates that are 0
+    if mask.sum().sum() == 0:
+        return mask
+    else:
+        return np.logical_or(np.logical_xor(mask,  df == 0), df > high)
+
+
 
 
 def _do_suppression(

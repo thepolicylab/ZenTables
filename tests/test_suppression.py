@@ -4,9 +4,42 @@ import pytest
 
 from zentables.zentables import _do_suppression
 
+
 @pytest.fixture(scope="function")
 def random() -> np.random.Generator:
     return np.random.default_rng(123456)
+
+
+def test_zeros():
+    """
+    The default behavior of _do_suppression should not suppress zero values.
+    This is to ensure that the sparseness of the dataset is retained in the suppression.
+    """
+    input_array = np.array([[1, 0], [0, 0]])
+    expected_array = np.array([[True, False], [False, False]])
+
+    df = pd.DataFrame(input_array)
+
+    mask = _do_suppression(df, low=1, high=5)
+    assert (mask.values == expected_array).all()
+
+    # Notice that the algorithm should return the original dataframe
+    # if there is nothing to suppress
+    input_array = np.array([[10, 0], [0, 0]])
+    expected_array = np.array([[True, False], [False, False]])
+
+    df = pd.DataFrame(input_array)
+
+    mask = _do_suppression(df, low=1, high=5)
+    assert (mask.values == expected_array).all()
+
+    input_array = np.array([[10, 3, 0], [0, 0, 0]])
+    expected_array = np.array([[True, True, False], [False, False, False]])
+
+    df = pd.DataFrame(input_array)
+
+    mask = _do_suppression(df, low=1, high=5)
+    assert (mask.values == expected_array).all()
 
 
 def test_negative_numbers():
@@ -183,5 +216,3 @@ def test_nan_in_mean_sd_table():
     suppressed_outcome_df = df.zen.mean_sd_table(
         index=["cuisine", "who"], columns="city", values="price", suppress=True, high=2
     )
-
-
