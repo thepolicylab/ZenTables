@@ -4,6 +4,7 @@ import pytest
 
 from zentables.zentables import _do_suppression
 
+
 @pytest.fixture(scope="function")
 def random() -> np.random.Generator:
     return np.random.default_rng(123456)
@@ -183,5 +184,3 @@ def test_nan_in_mean_sd_table():
     suppressed_outcome_df = df.zen.mean_sd_table(
         index=["cuisine", "who"], columns="city", values="price", suppress=True, high=2
     )
-
-
