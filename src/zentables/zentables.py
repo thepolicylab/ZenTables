@@ -10,16 +10,21 @@ Examples:
     import zentables as zen
     df.zen.pretty()
 """
+from __future__ import annotations
+
 import warnings
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Union, cast
+from typing import Any, Dict, Iterable, List, cast
 
 import numpy as np
 import pandas as pd
 import pandas.core.common as com
 from jinja2 import ChoiceLoader, Environment, PackageLoader
 from numpy.random import Generator
-from pandas.io.formats.style import FilePathOrBuffer, Styler, save_to_buffer
+from pandas._config import get_option
+from pandas._typing import FilePath, WriteBuffer
+from pandas.io.formats.format import save_to_buffer
+from pandas.io.formats.style import Styler
 from pandas.io.formats.style_render import CSSStyles
 
 
@@ -29,9 +34,9 @@ class OptionsWrapper:
 
     font_size: str = "Arial, Helvetica, sans-serif"
     font_family: str = "11pt"
-    show_index_names: bool = False
-    show_column_names: bool = False
-    show_copy_button: bool = True
+    hide_index_names: bool = True
+    hide_column_names: bool = True
+    hide_copy_button: bool = False
 
 
 _options = OptionsWrapper()
@@ -73,26 +78,37 @@ class PrettyStyler(Styler):
     # Load the Jinja2 templates. Note that the "prettystyle.tpl" extends the
     # original template so we have to use the original styler as well.
 
+    env = Environment(
+        loader=ChoiceLoader(
+            [
+                PackageLoader("zentables", "templates"),
+                Styler.loader,  # the default templates
+            ]
+        )
+    )
+
+    template_html_table = env.get_template("prettyhtml.tpl")
+
     def __init__(
         self,
-        data: Union[pd.DataFrame, pd.Series],
-        precision: Optional[int] = None,
-        table_styles: Optional[CSSStyles] = None,
-        uuid: Optional[str] = None,
-        caption: Union[tuple, str, None] = None,
-        table_attributes: Optional[str] = None,
+        data: pd.DataFrame | pd.Series,
+        precision: int | None = None,
+        table_styles: CSSStyles | None = None,
+        uuid: str | None = None,
+        caption: tuple | str | None = None,
+        table_attributes: str | None = None,
         cell_ids: bool = True,
-        na_rep: Optional[str] = None,
+        na_rep: str | None = None,
         uuid_len: int = 5,
         decimal: str = ".",
-        thousands: Optional[str] = None,
-        escape: Optional[str] = None,
-        font_family: Optional[str] = None,
-        font_size: Union[str, int] = None,
-        show_index_names: Optional[bool] = None,
-        show_column_names: Optional[bool] = None,
-        show_copy_button: Optional[bool] = None,
-        row_borders: Optional[List[int]] = None,
+        thousands: str | None = None,
+        escape: str | None = None,
+        font_family: str | None = None,
+        font_size: str | int | None = None,
+        hide_index_names: bool | None = None,
+        hide_column_names: bool | None = None,
+        hide_copy_button: bool | None = None,
+        row_borders: List[int] | None = None,
     ):
         Styler.__init__(
             self,
@@ -111,20 +127,20 @@ class PrettyStyler(Styler):
         )
 
         self._table_local_styles = _get_font_style(font_size, font_family)
-        self._index_names = (
-            show_index_names
-            if show_index_names is not None
-            else _options.show_index_names
+        self.hide_index_names = (
+            hide_index_names
+            if hide_index_names is not None
+            else _options.hide_index_names
         )
-        self._column_names = (
-            show_column_names
-            if show_column_names is not None
-            else _options.show_column_names
+        self.hide_column_names = (
+            hide_column_names
+            if hide_column_names is not None
+            else _options.hide_column_names
         )
-        self._copy_button = (
-            show_copy_button
-            if show_copy_button is not None
-            else _options.show_copy_button
+        self.hide_copy_button = (
+            hide_copy_button
+            if hide_copy_button is not None
+            else _options.hide_copy_button
         )
 
         if row_borders is not None:
@@ -136,26 +152,21 @@ class PrettyStyler(Styler):
 
         self.row_borders = row_borders
 
-    env = Environment(
-        loader=ChoiceLoader(
-            [
-                PackageLoader("zentables", "templates"),
-                Styler.loader,  # the default templates
-            ]
-        )
-    )
-
-    template_html_table = env.get_template("prettyhtml.tpl")
-
     def render(
         self,
-        sparse_index: Optional[bool] = None,
-        sparse_columns: Optional[bool] = None,
+        sparse_index: bool | None = None,
+        sparse_columns: bool | None = None,
+        max_rows: int | None = None,
+        max_cols: int | None = None,
         **kwargs,
     ) -> str:
         """
         Overrides the `render` method for the Styler class.
         """
+
+        if "hide_copy_button" in kwargs:
+            self.hide_copy_button = kwargs["hide_copy_button"]
+            del kwargs["hide_copy_button"]
 
         if sparse_index is None:
             sparse_index = pd.get_option("styler.sparse.index")
@@ -164,34 +175,27 @@ class PrettyStyler(Styler):
         return self._render_html(
             sparse_index,
             sparse_columns,
+            max_rows=max_rows,
+            max_cols=max_cols,
             table_local_styles=self._table_local_styles,
-            show_copy_button=self._copy_button,
+            hide_copy_button=self.hide_copy_button,
             **kwargs,
         )
 
-    def show_index_names(self):
-        """
-        Shows the names of the index
-        """
-        self._index_names = True
-        return self
-
-    def show_column_names(self):
-        """
-        Shows the names of the columns
-        """
-        self._column_names = True
-        return self
-
-    def hide_copy_button(self):
+    def hide_button(self):
         """
         Shows a "Copy Table" button below the rendered table.
         """
-        self._copy_button = False
+        self.hide_copy_button = True
         return self
 
     def _translate(
-        self, sparse_index: bool, sparse_cols: bool, blank: str = "&nbsp;"
+        self,
+        sparse_index: bool,
+        sparse_cols: bool,
+        max_rows: int | None = None,
+        max_cols: int | None = None,
+        blank: str = "&nbsp;",
     ) -> Dict[str, Any]:
         """
         Overrides the pandas method to add options to
@@ -201,25 +205,17 @@ class PrettyStyler(Styler):
         https://github.com/pandas-dev/pandas/blob/master/pandas/io/formats/style.py
         """
 
-        result = Styler._translate(
-            self, sparse_index=sparse_index, sparse_cols=sparse_cols, blank=blank
+        result = super(Styler, self)._translate(
+            sparse_index=sparse_index,
+            sparse_cols=sparse_cols,
+            max_rows=max_rows,
+            max_cols=max_cols,
+            blank=blank,
         )
 
         ### Wrangle the header
 
         head = result["head"]
-
-        if (
-            self.data.index.names
-            and com.any_not_none(*self.data.index.names)
-            and not self.hide_index_
-            and not self.hide_columns_
-            # The previous 4 conditions ensure there is a row with index names
-            # If _index_names is false,
-            # Then we need to pop the last row of head
-            and not self._index_names
-        ):
-            head.pop()
 
         for row in head:
             for cell in row:
@@ -295,32 +291,62 @@ class PrettyStyler(Styler):
                     _add_style_in_element(cell, "border-bottom: 1pt solid black")
 
         # If _column_names is false, remove column names
-        if not self._column_names and body:
+        # if not self._column_names and body:
 
-            max_th_count = 0
-            for cell in body[0]:
-                if cell.get("type") == "th":
-                    max_th_count += 1
+        #     max_th_count = 0
+        #     for cell in body[0]:
+        #         if cell.get("type") == "th":
+        #             max_th_count += 1
 
-            for row in head:
-                for col_number, cell in enumerate(row):
-                    if col_number < max_th_count:
-                        if "value" in cell:
-                            cell["value"] = blank
-                    else:
-                        break
+        #     for row in head:
+        #         for col_number, cell in enumerate(row):
+        #             if col_number < max_th_count:
+        #                 if "value" in cell:
+        #                     cell["value"] = blank
+        #             else:
+        #                 break
 
         return result
 
+    # def _render_html(
+    #     self,
+    #     sparse_index: bool,
+    #     sparse_columns: bool,
+    #     max_rows: int | None = None,
+    #     max_cols: int | None = None,
+    #     **kwargs,
+    # ) -> str:
+    #     """
+    #     Renders the ``Styler`` including all applied styles to HTML.
+    #     Generates a dict with necessary kwargs passed to jinja2 template.
+    #     """
+
+    #     self._compute()
+    #     # TODO: namespace all the pandas keys
+    #     d = self._translate(sparse_index, sparse_columns, max_rows, max_cols)
+    #     d.update(kwargs)
+    #     return self.template_html.render(
+    #         **d,
+    #         html_table_tpl=self.template_html_table,
+    #         html_style_tpl=self.template_html_style,
+    #     )
+
     def to_html(
         self,
-        buf: Optional[FilePathOrBuffer[str]] = None,
+        buf: FilePath | WriteBuffer[str] | None = None,
         *,
-        table_uuid: Optional[str] = None,
-        table_attributes: Optional[str] = None,
-        encoding: Optional[str] = None,
+        table_uuid: str | None = None,
+        table_attributes: str | None = None,
+        sparse_index: bool | None = None,
+        sparse_columns: bool | None = None,
+        bold_headers: bool = False,
+        caption: str | None = None,
+        max_rows: int | None = None,
+        max_columns: int | None = None,
+        encoding: str | None = None,
         doctype_html: bool = False,
         exclude_styles: bool = False,
+        **kwargs,
     ):
         """Overrides Styler class's to_html methods for compatibility.
 
@@ -329,18 +355,36 @@ class PrettyStyler(Styler):
         Used source code from
         https://github.com/pandas-dev/pandas/blob/master/pandas/io/formats/style.py
         """
+
         if table_uuid:
             self.set_uuid(table_uuid)
 
         if table_attributes:
             self.set_table_attributes(table_attributes)
 
+        if sparse_index is None:
+            sparse_index = get_option("styler.sparse.index")
+        if sparse_columns is None:
+            sparse_columns = get_option("styler.sparse.columns")
+
+        if bold_headers:
+            self.set_table_styles(
+                [{"selector": "th", "props": "font-weight: bold;"}], overwrite=False
+            )
+
+        if caption is not None:
+            self.set_caption(caption)
+
         # Build HTML string..
-        html = self.render(
+        html = self._render_html(
+            sparse_index=sparse_index,
+            sparse_columns=sparse_columns,
+            max_rows=max_rows,
+            max_cols=max_columns,
             exclude_styles=exclude_styles,
-            encoding=encoding if encoding else "utf-8",
+            encoding=encoding or get_option("styler.render.encoding"),
             doctype_html=doctype_html,
-            show_copy_button=False,  # this is the only difference
+            **kwargs,
         )
 
         return save_to_buffer(
@@ -358,7 +402,7 @@ class ZenTablesAccessor:
         _pandas_obj: the pandas DataFrame passed to the class.
     """
 
-    def __init__(self, pandas_obj: Union[pd.Series, pd.DataFrame]):
+    def __init__(self, pandas_obj: pd.Series | pd.DataFrame):
         """Constructor for the accessor class.
 
         Args:
@@ -400,8 +444,8 @@ class ZenTablesAccessor:
         totals: bool = True,
         totals_name: str = "Total",
         subtotals: bool = False,
-        subtotals_name: Optional[str] = "Subtotal",
-        props: Optional[str] = None,
+        subtotals_name: str | None = "Subtotal",
+        props: str | None = None,
         digits: int = 1,
         suppress: bool = False,
         suppress_symbol: str = "*",
@@ -508,8 +552,8 @@ class ZenTablesAccessor:
         totals: bool = False,
         totals_name: str = "Total",
         subtotals: bool = False,
-        subtotals_name: Optional[str] = "Subtotal",
-        props: Optional[str] = None,
+        subtotals_name: str | None = "Subtotal",
+        props: str | None = None,
         digits: int = 1,
         suppress: bool = False,
         suppress_symbol: str = "*",
@@ -638,9 +682,9 @@ class ZenTablesAccessor:
         values=None,
         aggfunc=None,
         margins: bool = False,
-        margins_name: Optional[str] = "All",
+        margins_name: str | None = "All",
         submargins: bool = False,
-        submargins_name: Optional[str] = "All",
+        submargins_name: str | None = "All",
         **kwargs,
     ) -> pd.DataFrame:
         """
@@ -757,7 +801,7 @@ class ZenTablesAccessor:
         margins: bool = True,
         margins_name: str = "All",
         submargins: bool = False,
-        submargins_name: Optional[str] = "All",
+        submargins_name: str | None = "All",
         na_rep: str = "N/A",
         suppress: bool = False,
         low: int = 1,
@@ -830,7 +874,7 @@ class ZenTablesAccessor:
 
 
 def _get_font_style(
-    font_size: Optional[Union[int, str]] = None, font_family: Optional[str] = None
+    font_size: int | str | None = None, font_family: str | None = None
 ) -> List[str]:
 
     font_size = font_size or _options.font_size
@@ -843,7 +887,7 @@ def _get_font_style(
 
 
 def _convert_names(
-    names, max_levels: Optional[int] = None, err_msg: Optional[str] = None
+    names, max_levels: int | None = None, err_msg: str | None = None
 ) -> List[str]:
     """Helper function that converts arguments of index, columns, values to list.
 
@@ -893,7 +937,7 @@ def _combine_n_pct(
     df_n: pd.DataFrame,
     df_pct: pd.DataFrame,
     digits: int = 1,
-    suppress_symbol: Optional[str] = None,
+    suppress_symbol: str | None = None,
 ) -> pd.DataFrame:
     """
     Helper function that formats and combines n and pct values
@@ -906,7 +950,7 @@ def _combine_n_pct(
     return df_n_str.add(df_pct_str)
 
 
-def _seed_to_rng(seed: Optional[Union[int, Generator]] = None) -> Generator:
+def _seed_to_rng(seed: int | Generator | None = None) -> Generator:
     if seed is None:
         # When there is no seed set, we start a RNG based on system entropy
         return np.random.default_rng()
@@ -927,7 +971,7 @@ def _local_suppression(
     mini_df_n: pd.DataFrame,
     low: int = 1,
     high: int = 10,
-    seed: Optional[Union[int, Generator]] = None,
+    seed: int | Generator | None = None,
 ):
     """
     Helper function that applies cell suppression to mini_df_n.
@@ -1044,9 +1088,7 @@ def _combine_mean_std(
     return result
 
 
-def _add_style_in_element(
-    ele: Dict[str, Any], style: Union[str, Iterable[str]]
-) -> None:
+def _add_style_in_element(ele: Dict[str, Any], style: str | Iterable[str]) -> None:
     """
     Helper function that sets the `style` field in a dict to `style` if it doesn't
     already exist or updates the style field. Maintain the value as a list.

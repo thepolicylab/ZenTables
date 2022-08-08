@@ -61,7 +61,7 @@
 </table>
 {% endblock table %}
 {% block after_table %}
-{% if show_copy_button and not exclude_styles %}
+{% if not hide_copy_button %}
 <input id="B_{{uuid}}" type="button" value="Copy Table" />
 <script language="javascript">
 document.querySelector("#B_{{uuid}}").addEventListener("click", function () {
@@ -73,19 +73,19 @@ document.querySelector("#B_{{uuid}}").addEventListener("click", function () {
         node = node.nextSibling;
     }
   }
-  
+
   function removePadding(node) {
     if (node.tagName === "TH" || node.tagName === "TD"){
       node.style.padding = "0 5px";
     }
   }
-  
+
   let el = document.getElementById("T_{{uuid}}");
   let parent = el.parentNode;
   let elCopy = el.cloneNode(true);
-  
+
   walkTheDOM(elCopy, removePadding);
-  
+
   parent.appendChild(elCopy);
 
   var body = document.body,
