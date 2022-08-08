@@ -457,8 +457,8 @@ class ZenTablesAccessor:
 
         Args:
             index (str or list-like): The categories on the index. Only at
-                most two levels are supportedcurrently. Passed to the same
-                argument in the pandas `pivot_table`function.
+                most two levels are supported currently. Passed to the same
+                argument in the pandas `pivot_table` function.
             columns (str or list-like): The categories on the columns. Only
                 one level is supported currently. Passed to the same argument
                 in the pandas `pivot_table` function.
@@ -603,7 +603,7 @@ class ZenTablesAccessor:
             if props == "index":
                 pivot_props = pivot.div(pivot.iloc[:, -1], axis=0)
             elif props == "columns":
-                pivot_props = pivot.div(pivot.iloc[-1, 0], axis=1)
+                pivot_props = pivot.div(pivot.iloc[-1, :], axis=1)
             elif props == "all":
                 pivot_props = pivot.div(pivot.iloc[-1, -1].squeeze())
 
