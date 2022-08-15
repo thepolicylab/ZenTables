@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from zentables.zentables import _do_suppression
+from zentables.utils import _do_suppression
 
 
 @pytest.fixture(scope="function")

@@ -13,6 +13,7 @@ Typical usage examples::
     df.zen.pretty()
 """
 
-from .zentables import ZenTablesAccessor, set_options
+from .accessors import ZenTablesDataFrameAccessor, ZenTablesSeriesAccessor
+from .zentables import set_options
 
-__all__ = ["ZenTablesAccessor", "set_options"]
+__all__ = ["ZenTablesDataFrameAccessor", "ZenTablesSeriesAccessor" "set_options"]
