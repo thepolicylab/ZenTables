@@ -9,7 +9,7 @@ authors = [
     { name = "The Policy Lab", email = "thepolicylab@brown.edu" },
 ]
 maintainers = [{ name = "Paul Xu", email = "yang_xu@brown.edu" }]
-requires-python = ">=3.9"
+requires-python = ">3.8"
 readme = "README.md"
 keywords = ["pandas", "tables", "display", "styler"]
 classifiers = [
@@ -41,11 +41,13 @@ dev = [
 ]
 
 [tool.hatch.envs.dev]
-python = "3.9"
 features = ["dev"]
 
 [tool.hatch.envs.dev.scripts]
 test = "pytest"
+
+[[tool.hatch.envs.dev.matrix]]
+python = ["3.9", "3.10", "3.11"]
 
 [tool.black]
 target-version = ['py39']
@@ -169,7 +171,6 @@ exclude = [".github", "docs", "src/notebook"]
 
 [tool.mypy]
 ignore_missing_imports = true
-python_version = "3.9"
 
 [build-system]
 requires = ["hatchling"]
