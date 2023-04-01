@@ -9,8 +9,8 @@ from dataclasses import dataclass
 class OptionsWrapper:
     """A wrapper class around a dict to provide global options functionalities."""
 
-    font_size: str = "Arial, Helvetica, sans-serif"
-    font_family: str = "11pt"
+    font_family: str = "Arial, Helvetica, sans-serif"
+    font_size: str = "11pt"
     hide_index_names: bool = True
     show_copy_button: bool = True
 

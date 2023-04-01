@@ -3,6 +3,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+import zentables.options
 from zentables.accessor import _convert_names, _swap_column_levels
 from zentables.options import OptionsWrapper, _options, set_options
 from zentables.pretty_styler import _get_font_style
@@ -90,7 +91,7 @@ def test__swap_column_levels(pivot):
 
 def test_global_set_options(monkeypatch):
     # Monkey patch in a new OptionsWrapper object just for this test
-    monkeypatch.setattr(_options, OptionsWrapper())
+    monkeypatch.setattr(zentables.options, "_options", OptionsWrapper())
 
     set_options(font_size="11pt")
     assert _options.font_size == "11pt"
