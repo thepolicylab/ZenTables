@@ -6,10 +6,10 @@ the functionalities of the Styler class for more styling options
 
 from __future__ import annotations
 
+import copy
 from typing import TYPE_CHECKING, Any, Dict, Iterable, List
 
 import pandas as pd
-import pandas.core.common as com
 from jinja2 import ChoiceLoader, Environment, PackageLoader
 from pandas.io.formats.style import Styler, save_to_buffer
 
@@ -31,6 +31,17 @@ class PrettyStyler(Styler):
     # Load the Jinja2 templates. Note that the "prettystyle.tpl" extends the
     # original template so we have to use the original styler as well.
 
+    env = Environment(
+        loader=ChoiceLoader(
+            [
+                PackageLoader("zentables", "templates"),
+                Styler.loader,  # the default templates
+            ]
+        )
+    )
+
+    template_html_table = env.get_template("prettyhtml.tpl")
+
     def __init__(
         self,
         data: pd.DataFrame | pd.Series,
@@ -47,11 +58,10 @@ class PrettyStyler(Styler):
         escape: str | None = None,
         font_family: str | None = None,
         font_size: str | int | None = None,
-        show_index_names: bool | None = None,
-        show_column_names: bool | None = None,
+        hide_index_names: bool | None = None,
         show_copy_button: bool | None = None,
         row_borders: List[int] | None = None,
-    ):
+    ) -> None:
         Styler.__init__(
             self,
             data=data,
@@ -69,15 +79,10 @@ class PrettyStyler(Styler):
         )
 
         self._table_local_styles = _get_font_style(font_size, font_family)
-        self._index_names = (
-            show_index_names
-            if show_index_names is not None
-            else _options.show_index_names
-        )
-        self._column_names = (
-            show_column_names
-            if show_column_names is not None
-            else _options.show_column_names
+        self.hide_index_names = (
+            hide_index_names
+            if hide_index_names is not None
+            else _options.hide_index_names
         )
         self._copy_button = (
             show_copy_button
@@ -94,54 +99,7 @@ class PrettyStyler(Styler):
 
         self.row_borders = row_borders
 
-    env = Environment(
-        loader=ChoiceLoader(
-            [
-                PackageLoader("zentables", "templates"),
-                Styler.loader,  # the default templates
-            ]
-        )
-    )
-
-    template_html_table = env.get_template("prettyhtml.tpl")
-
-    def render(
-        self,
-        sparse_index: bool | None = None,
-        sparse_columns: bool | None = None,
-        **kwargs,
-    ) -> str:
-        """
-        Overrides the `render` method for the Styler class.
-        """
-
-        if sparse_index is None:
-            sparse_index = pd.get_option("styler.sparse.index")
-        if sparse_columns is None:
-            sparse_columns = pd.get_option("styler.sparse.columns")
-        return self._render_html(
-            sparse_index,
-            sparse_columns,
-            table_local_styles=self._table_local_styles,
-            show_copy_button=self._copy_button,
-            **kwargs,
-        )
-
-    def show_index_names(self):
-        """
-        Shows the names of the index
-        """
-        self._index_names = True
-        return self
-
-    def show_column_names(self):
-        """
-        Shows the names of the columns
-        """
-        self._column_names = True
-        return self
-
-    def hide_copy_button(self):
+    def hide_copy_button(self) -> PrettyStyler:
         """
         Shows a "Copy Table" button below the rendered table.
         """
@@ -149,7 +107,13 @@ class PrettyStyler(Styler):
         return self
 
     def _translate(
-        self, sparse_index: bool, sparse_cols: bool, blank: str = "&nbsp;", **kwargs
+        self,
+        sparse_index: bool,
+        sparse_cols: bool,
+        max_rows: int | None = None,
+        max_cols: int | None = None,
+        blank: str = "&nbsp;",
+        dxs: list[dict] | None = None,
     ) -> Dict[str, Any]:
         """
         Overrides the pandas method to add options to
@@ -163,25 +127,15 @@ class PrettyStyler(Styler):
             self,
             sparse_index=sparse_index,
             sparse_cols=sparse_cols,
+            max_rows=max_rows,
+            max_cols=max_cols,
             blank=blank,
-            **kwargs,
+            dxs=dxs,
         )
 
         ### Wrangle the header
 
         head = result["head"]
-
-        if (
-            self.data.index.names
-            and com.any_not_none(*self.data.index.names)
-            and not self.hide_index_
-            and not self.hide_columns_
-            # The previous 4 conditions ensure there is a row with index names
-            # If _index_names is false,
-            # Then we need to pop the last row of head
-            and not self._index_names
-        ):
-            head.pop()
 
         for row in head:
             for cell in row:
@@ -254,7 +208,7 @@ class PrettyStyler(Styler):
                     _add_style_in_element(cell, "border-bottom: 1pt solid black")
 
         # If _column_names is false, remove column names
-        if not self._column_names and body:
+        if self.hide_column_names and body:
             max_th_count = 0
             for cell in body[0]:
                 if cell.get("type") == "th":
@@ -272,13 +226,20 @@ class PrettyStyler(Styler):
 
     def to_html(
         self,
-        buf: FilePath | WriteBuffer[str],
+        buf: FilePath | WriteBuffer[str] | None = None,
         *,
         table_uuid: str | None = None,
         table_attributes: str | None = None,
+        sparse_index: bool | None = None,
+        sparse_columns: bool | None = None,
+        bold_headers: bool = False,
+        caption: str | None = None,
+        max_rows: int | None = None,
+        max_columns: int | None = None,
         encoding: str | None = None,
         doctype_html: bool = False,
         exclude_styles: bool = False,
+        **kwargs,
     ) -> None:
         """Overrides Styler class's to_html methods for compatibility.
 
@@ -287,23 +248,114 @@ class PrettyStyler(Styler):
         Used source code from
         https://github.com/pandas-dev/pandas/blob/master/pandas/io/formats/style.py
         """
+
+        obj = self._copy(deepcopy=True)  # manipulate table_styles on obj, not self
+
         if table_uuid:
-            self.set_uuid(table_uuid)
+            obj.set_uuid(table_uuid)
 
         if table_attributes:
-            self.set_table_attributes(table_attributes)
+            obj.set_table_attributes(table_attributes)
+
+        if sparse_index is None:
+            sparse_index = pd.get_option("styler.sparse.index")
+        if sparse_columns is None:
+            sparse_columns = pd.get_option("styler.sparse.columns")
+
+        if bold_headers:
+            obj.set_table_styles(
+                [{"selector": "th", "props": "font-weight: bold;"}], overwrite=False
+            )
+
+        if caption is not None:
+            obj.set_caption(caption)
 
         # Build HTML string..
-        html = self.render(
+        html = obj._render_html(  # pylint: disable=W0212
+            sparse_index=sparse_index,
+            sparse_columns=sparse_columns,
+            max_rows=max_rows,
+            max_cols=max_columns,
             exclude_styles=exclude_styles,
-            encoding=encoding if encoding else "utf-8",
+            encoding=encoding or pd.get_option("styler.render.encoding"),
             doctype_html=doctype_html,
-            show_copy_button=False,  # this is the only difference
+            # The two lines below are the only differences
+            table_local_styles=self._table_local_styles,
+            show_copy_button=self._copy_button,
+            **kwargs,
         )
 
         return save_to_buffer(
             html, buf=buf, encoding=(encoding if buf is not None else None)
         )
+
+    def _copy(self, deepcopy: bool = False) -> PrettyStyler:
+        """
+        Copies a Styler, allowing for deepcopy or shallow copy
+        Copying a Styler aims to recreate a new Styler object which contains the same
+        data and styles as the original.
+        Data dependent attributes [copied and NOT exported]:
+          - formatting (._display_funcs)
+          - hidden index values or column values (.hidden_rows, .hidden_columns)
+          - tooltips
+          - cell_context (cell css classes)
+          - ctx (cell css styles)
+          - caption
+          - concatenated stylers
+        Non-data dependent attributes [copied and exported]:
+          - css
+          - hidden index state and hidden columns state (.hide_index_, .hide_columns_)
+          - table_attributes
+          - table_styles
+          - applied styles (_todo)
+        """
+        # GH 40675
+        styler = PrettyStyler(
+            self.data,  # populates attributes 'data', 'columns', 'index' as shallow
+        )
+        shallow = [  # simple string or boolean immutables
+            "hide_index_",
+            "hide_columns_",
+            "hide_column_names",
+            "hide_index_names",
+            "table_attributes",
+            "cell_ids",
+            "caption",
+            "uuid",
+            "uuid_len",
+            "template_latex",  # also copy templates if these have been customised
+            "template_html_style",
+            "template_html_table",
+            "template_html",
+            "_table_local_styles",
+            "_copy_button",
+        ]
+        deep = [  # nested lists or dicts
+            "css",
+            "concatenated",
+            "_display_funcs",
+            "_display_funcs_index",
+            "_display_funcs_columns",
+            "hidden_rows",
+            "hidden_columns",
+            "ctx",
+            "ctx_index",
+            "ctx_columns",
+            "cell_context",
+            "_todo",
+            "table_styles",
+            "tooltips",
+            "row_borders",
+        ]
+
+        for attr in shallow:
+            setattr(styler, attr, getattr(self, attr))
+
+        for attr in deep:
+            val = getattr(self, attr)
+            setattr(styler, attr, copy.deepcopy(val) if deepcopy else val)
+
+        return styler
 
 
 #################################################

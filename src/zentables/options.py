@@ -11,8 +11,7 @@ class OptionsWrapper:
 
     font_size: str = "Arial, Helvetica, sans-serif"
     font_family: str = "11pt"
-    show_index_names: bool = False
-    show_column_names: bool = False
+    hide_index_names: bool = True
     show_copy_button: bool = True
 
 
