@@ -1,59 +1,17 @@
-# -*- coding: utf-8 -*-
 """
-Main functionalities for `ZenTables` package.
-
-Provides a wrapper class around a `dict` for global options for the package.
-Also provides an Accessor class registered with the `pandas` api to provide
-access to package functions.
-
-Examples:
-    import zentables as zen
-    df.zen.pretty()
+Provides an accessor class to pandas to enable integration such as `df.zen.pretty()"
 """
+
 from __future__ import annotations
+
 import logging
-from dataclasses import dataclass
 from typing import List, cast
 
 import numpy as np
-from numpy.random import Generator
 import pandas as pd
+from numpy.random import Generator
 
 from .pretty_styler import PrettyStyler
-
-
-@dataclass
-class OptionsWrapper:
-    """A wrapper class around a dict to provide global options functionalities."""
-
-    font_size: str = "Arial, Helvetica, sans-serif"
-    font_family: str = "11pt"
-    show_index_names: bool = False
-    show_column_names: bool = False
-    show_copy_button: bool = True
-
-
-_options = OptionsWrapper()
-
-
-def set_options(**kwargs):
-    """Utility function to set package-wide options.
-
-    Args:
-        kwargs: pass into the function the option name and value to be set.
-
-    Raises:
-        KeyError: if the option passed is not a valid option.
-
-    Examples:
-        import zentables as zen
-        zen.set_options(option1=value1, option2=value2)
-    """
-    for opt, val in kwargs.items():
-        if hasattr(_options, opt):
-            setattr(_options, opt, val)
-        else:
-            raise KeyError(f"Invalid option: {opt}")
 
 
 @pd.api.extensions.register_dataframe_accessor("zen")
@@ -528,23 +486,6 @@ class ZenTablesAccessor:
             result = pd.concat({"n": count, "Mean (SD)": mean_std}, axis=1)
 
         return _swap_column_levels(result)
-
-
-#################################################
-# Helper functions
-#################################################
-
-
-def _get_font_style(
-    font_size: int | str | None = None, font_family: str | None = None
-) -> List[str]:
-    font_size = font_size or _options.font_size
-    if isinstance(font_size, int):
-        font_size = f"{font_size}pt"
-
-    font_family = font_family or _options.font_family
-
-    return [f"font-size: {font_size}", rf"font-family: {font_family}"]
 
 
 def _convert_names(

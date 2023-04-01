@@ -5,16 +5,18 @@ the functionalities of the Styler class for more styling options
 
 
 from __future__ import annotations
-from typing import Any, Dict, Iterable, List, TYPE_CHECKING
+
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List
 
 import pandas as pd
 import pandas.core.common as com
 from jinja2 import ChoiceLoader, Environment, PackageLoader
-from pandas.io.formats.style import FilePathOrBuffer, Styler, save_to_buffer
+from pandas.io.formats.style import Styler, save_to_buffer
 
-from .zentables import _options
+from .options import _options
 
 if TYPE_CHECKING:
+    from pandas._typing import FilePath, WriteBuffer
     from pandas.io.formats.style_render import CSSStyles
 
 
@@ -270,7 +272,7 @@ class PrettyStyler(Styler):
 
     def to_html(
         self,
-        buf: FilePathOrBuffer[str] | None = None,
+        buf: FilePath | WriteBuffer[str],
         *,
         table_uuid: str | None = None,
         table_attributes: str | None = None,

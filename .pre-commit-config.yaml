@@ -5,21 +5,26 @@ repos:
       - id: check-yaml
       - id: end-of-file-fixer
       - id: trailing-whitespace
-  -   repo: local
-      hooks:
+  - repo: local
+    hooks:
       # NOTE: we make `black` a local hook because if it's installed from
       # PyPI (rather than from source) then it'll run twice as fast thanks to mypyc
-      -   id: black
-          name: black
-          description: "Black: The uncompromising Python code formatter"
-          entry: black
-          language: python
-          require_serial: true
-          types_or: [python, pyi]
-          additional_dependencies: [black==23.3.0]
+      - id: black
+        name: black
+        description: "Black: The uncompromising Python code formatter"
+        entry: black
+        language: python
+        require_serial: true
+        types_or: [python, pyi]
+        additional_dependencies: [black==23.3.0]
+  - repo: https://github.com/pycqa/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        name: isort (python)
   - repo: https://github.com/charliermarsh/ruff-pre-commit
     # Ruff version.
-    rev: 'v0.0.257'
+    rev: "v0.0.257"
     hooks:
       - id: ruff
   - repo: https://github.com/pre-commit/mirrors-mypy
