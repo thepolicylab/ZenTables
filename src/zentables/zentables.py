@@ -10,17 +10,16 @@ Examples:
     import zentables as zen
     df.zen.pretty()
 """
-import warnings
+from __future__ import annotations
+import logging
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Union, cast
+from typing import List, cast
 
 import numpy as np
-import pandas as pd
-import pandas.core.common as com
-from jinja2 import ChoiceLoader, Environment, PackageLoader
 from numpy.random import Generator
-from pandas.io.formats.style import FilePathOrBuffer, Styler, save_to_buffer
-from pandas.io.formats.style_render import CSSStyles
+import pandas as pd
+
+from .pretty_styler import PrettyStyler
 
 
 @dataclass
@@ -57,297 +56,6 @@ def set_options(**kwargs):
             raise KeyError(f"Invalid option: {opt}")
 
 
-#########################################################
-# Constants for creating css-based tables (faster option)
-#########################################################
-
-
-class PrettyStyler(Styler):
-    """Custom subclass for pandas.io.format.Styler.
-
-    It uses the two custom templates defined in
-    the directory and is used by the pandas accessor class
-    to create a custom Styler object
-    """
-
-    # Load the Jinja2 templates. Note that the "prettystyle.tpl" extends the
-    # original template so we have to use the original styler as well.
-
-    def __init__(
-        self,
-        data: Union[pd.DataFrame, pd.Series],
-        precision: Optional[int] = None,
-        table_styles: Optional[CSSStyles] = None,
-        uuid: Optional[str] = None,
-        caption: Union[tuple, str, None] = None,
-        table_attributes: Optional[str] = None,
-        cell_ids: bool = True,
-        na_rep: Optional[str] = None,
-        uuid_len: int = 5,
-        decimal: str = ".",
-        thousands: Optional[str] = None,
-        escape: Optional[str] = None,
-        font_family: Optional[str] = None,
-        font_size: Union[str, int] = None,
-        show_index_names: Optional[bool] = None,
-        show_column_names: Optional[bool] = None,
-        show_copy_button: Optional[bool] = None,
-        row_borders: Optional[List[int]] = None,
-    ):
-        Styler.__init__(
-            self,
-            data=data,
-            precision=precision,
-            table_styles=table_styles,
-            uuid=uuid,
-            caption=caption,
-            table_attributes=table_attributes,
-            cell_ids=cell_ids,
-            na_rep=na_rep,
-            uuid_len=uuid_len,
-            decimal=decimal,
-            thousands=thousands,
-            escape=escape,
-        )
-
-        self._table_local_styles = _get_font_style(font_size, font_family)
-        self._index_names = (
-            show_index_names
-            if show_index_names is not None
-            else _options.show_index_names
-        )
-        self._column_names = (
-            show_column_names
-            if show_column_names is not None
-            else _options.show_column_names
-        )
-        self._copy_button = (
-            show_copy_button
-            if show_copy_button is not None
-            else _options.show_copy_button
-        )
-
-        if row_borders is not None:
-            for row_number in row_borders:
-                if row_number >= len(data):
-                    raise ValueError(
-                        f"Row number {row_number} is out of range for the data."
-                    )
-
-        self.row_borders = row_borders
-
-    env = Environment(
-        loader=ChoiceLoader(
-            [
-                PackageLoader("zentables", "templates"),
-                Styler.loader,  # the default templates
-            ]
-        )
-    )
-
-    template_html_table = env.get_template("prettyhtml.tpl")
-
-    def render(
-        self,
-        sparse_index: Optional[bool] = None,
-        sparse_columns: Optional[bool] = None,
-        **kwargs,
-    ) -> str:
-        """
-        Overrides the `render` method for the Styler class.
-        """
-
-        if sparse_index is None:
-            sparse_index = pd.get_option("styler.sparse.index")
-        if sparse_columns is None:
-            sparse_columns = pd.get_option("styler.sparse.columns")
-        return self._render_html(
-            sparse_index,
-            sparse_columns,
-            table_local_styles=self._table_local_styles,
-            show_copy_button=self._copy_button,
-            **kwargs,
-        )
-
-    def show_index_names(self):
-        """
-        Shows the names of the index
-        """
-        self._index_names = True
-        return self
-
-    def show_column_names(self):
-        """
-        Shows the names of the columns
-        """
-        self._column_names = True
-        return self
-
-    def hide_copy_button(self):
-        """
-        Shows a "Copy Table" button below the rendered table.
-        """
-        self._copy_button = False
-        return self
-
-    def _translate(
-        self, sparse_index: bool, sparse_cols: bool, blank: str = "&nbsp;"
-    ) -> Dict[str, Any]:
-        """
-        Overrides the pandas method to add options to
-        remove row/column names and add styles.
-
-        Some code used directly from
-        https://github.com/pandas-dev/pandas/blob/master/pandas/io/formats/style.py
-        """
-
-        result = Styler._translate(
-            self, sparse_index=sparse_index, sparse_cols=sparse_cols, blank=blank
-        )
-
-        ### Wrangle the header
-
-        head = result["head"]
-
-        if (
-            self.data.index.names
-            and com.any_not_none(*self.data.index.names)
-            and not self.hide_index_
-            and not self.hide_columns_
-            # The previous 4 conditions ensure there is a row with index names
-            # If _index_names is false,
-            # Then we need to pop the last row of head
-            and not self._index_names
-        ):
-            head.pop()
-
-        for row in head:
-            for cell in row:
-                if cell.get("type") == "th":
-                    _add_style_in_element(cell, "text-align: center")
-
-        # Add borders to the first and last line of the header
-        for cell in head[0]:
-            _add_style_in_element(cell, "border-top: 1.5pt solid black")
-
-        for cell in head[-1]:
-            _add_style_in_element(cell, "border-bottom: 1.5pt solid black")
-
-        ### Wrangle the body
-
-        body = result["body"]
-
-        # Updates body to apply cell-wise style attribute
-        # so that the style copies over to Word and Google Docs.
-
-        if sparse_index and len(body) > 1:
-
-            sep_rows = []
-            max_th_count = 0
-            for row_number, row in enumerate(body):
-                th_count = 0
-
-                for cell in row:
-                    if cell.get("type") == "th" and cell.get("is_visible"):
-                        _add_style_in_element(
-                            cell, ["vertical-align: middle", "text-align: left"]
-                        )
-                        th_count += 1
-                    if cell.get("type") == "td":
-                        _add_style_in_element(
-                            cell, ["vertical-align: middle", "text-align: center"]
-                        )
-
-                if th_count >= 2:
-                    sep_rows.append(row_number)
-
-                if row_number == 0:
-                    max_th_count = th_count
-
-            for row_number in sep_rows:
-                for cell in body[row_number]:
-                    _add_style_in_element(cell, "border-top: 1pt solid black")
-
-            # Vertically walk through row headers to add a bottom border for the table.
-            for i in range(max_th_count):
-
-                for row in body:
-                    if row[i].get("is_visible"):
-                        last_th_for_level = row[i]
-
-                if last_th_for_level and "styles" in last_th_for_level:
-                    _add_style_in_element(
-                        last_th_for_level, "border-bottom: 1.5pt solid black"
-                    )
-            # Add bottom border to all body rows
-            for cell in body[-1]:
-                if cell.get("type") == "td":
-                    _add_style_in_element(cell, "border-bottom: 1.5pt solid black")
-
-        elif len(body) > 1:
-
-            for cell in body[-1]:
-                _add_style_in_element(cell, "border-bottom: 1.5pt solid black")
-
-        if self.row_borders is not None:
-            for row_number in self.row_borders:
-                for cell in body[row_number]:
-                    _add_style_in_element(cell, "border-bottom: 1pt solid black")
-
-        # If _column_names is false, remove column names
-        if not self._column_names and body:
-
-            max_th_count = 0
-            for cell in body[0]:
-                if cell.get("type") == "th":
-                    max_th_count += 1
-
-            for row in head:
-                for col_number, cell in enumerate(row):
-                    if col_number < max_th_count:
-                        if "value" in cell:
-                            cell["value"] = blank
-                    else:
-                        break
-
-        return result
-
-    def to_html(
-        self,
-        buf: Optional[FilePathOrBuffer[str]] = None,
-        *,
-        table_uuid: Optional[str] = None,
-        table_attributes: Optional[str] = None,
-        encoding: Optional[str] = None,
-        doctype_html: bool = False,
-        exclude_styles: bool = False,
-    ):
-        """Overrides Styler class's to_html methods for compatibility.
-
-        Please see the pandas documentation for more defaults.
-
-        Used source code from
-        https://github.com/pandas-dev/pandas/blob/master/pandas/io/formats/style.py
-        """
-        if table_uuid:
-            self.set_uuid(table_uuid)
-
-        if table_attributes:
-            self.set_table_attributes(table_attributes)
-
-        # Build HTML string..
-        html = self.render(
-            exclude_styles=exclude_styles,
-            encoding=encoding if encoding else "utf-8",
-            doctype_html=doctype_html,
-            show_copy_button=False,  # this is the only difference
-        )
-
-        return save_to_buffer(
-            html, buf=buf, encoding=(encoding if buf is not None else None)
-        )
-
-
 @pd.api.extensions.register_dataframe_accessor("zen")
 class ZenTablesAccessor:
     """An accessor class registered to the Pandas API
@@ -358,7 +66,7 @@ class ZenTablesAccessor:
         _pandas_obj: the pandas DataFrame passed to the class.
     """
 
-    def __init__(self, pandas_obj: Union[pd.Series, pd.DataFrame]):
+    def __init__(self, pandas_obj: pd.Series | pd.DataFrame):
         """Constructor for the accessor class.
 
         Args:
@@ -400,8 +108,8 @@ class ZenTablesAccessor:
         totals: bool = True,
         totals_name: str = "Total",
         subtotals: bool = False,
-        subtotals_name: Optional[str] = "Subtotal",
-        props: Optional[str] = None,
+        subtotals_name: str | None = "Subtotal",
+        props: str | None = None,
         digits: int = 1,
         suppress: bool = False,
         suppress_symbol: str = "*",
@@ -508,8 +216,8 @@ class ZenTablesAccessor:
         totals: bool = False,
         totals_name: str = "Total",
         subtotals: bool = False,
-        subtotals_name: Optional[str] = "Subtotal",
-        props: Optional[str] = None,
+        subtotals_name: str | None = "Subtotal",
+        props: str | None = None,
         digits: int = 1,
         suppress: bool = False,
         suppress_symbol: str = "*",
@@ -517,9 +225,7 @@ class ZenTablesAccessor:
         high: int = 10,
         **kwargs,
     ) -> pd.DataFrame:
-
         if props is None:
-
             pivot = self._internal_pivot_table(
                 index=index,
                 columns=columns,
@@ -555,7 +261,6 @@ class ZenTablesAccessor:
         # If there is only one level on the index, calculate percentages and call
         # it a day.
         if index_levels == 1:
-
             if props == "index":
                 pivot_props = pivot.div(pivot.iloc[:, -1], axis=0)
             elif props == "columns":
@@ -564,7 +269,6 @@ class ZenTablesAccessor:
                 pivot_props = pivot.div(pivot.iloc[-1, -1].squeeze())
 
             if not totals:
-
                 if suppress:
                     mask = _do_suppression(pivot, low, high)
                     return (
@@ -638,9 +342,9 @@ class ZenTablesAccessor:
         values=None,
         aggfunc=None,
         margins: bool = False,
-        margins_name: Optional[str] = "All",
+        margins_name: str | None = "All",
         submargins: bool = False,
-        submargins_name: Optional[str] = "All",
+        submargins_name: str | None = "All",
         **kwargs,
     ) -> pd.DataFrame:
         """
@@ -664,13 +368,14 @@ class ZenTablesAccessor:
             return pivot
 
         if submargins and not margins:
-            warnings.warn("`submargins` is set to True. Overriding `margins` settings")
+            logging.warning(
+                "`submargins` is set to True. Overriding `margins` settings"
+            )
 
         submargins_frames = [pivot]
         nlevels_index = len(index)
 
         for level in range(1, nlevels_index):
-
             submargin = self._pandas_obj.pivot_table(
                 index=index[:level],
                 columns=columns,
@@ -757,7 +462,7 @@ class ZenTablesAccessor:
         margins: bool = True,
         margins_name: str = "All",
         submargins: bool = False,
-        submargins_name: Optional[str] = "All",
+        submargins_name: str = "All",
         na_rep: str = "N/A",
         suppress: bool = False,
         low: int = 1,
@@ -803,7 +508,8 @@ class ZenTablesAccessor:
         count = pivot.xs("count", axis=1).astype("Int64").fillna(0)
         mean = pivot.xs("mean", axis=1)
         std = pivot.xs("std", axis=1)
-        # issues can arise when the shape is inconsistent because some groupings are entirely empty
+        # issues can arise when the shape is inconsistent because some groupings are
+        # entirely empty
         assert (
             count.shape == mean.shape == std.shape
         ), "Ensure that all categories have at least some entry"
@@ -830,9 +536,8 @@ class ZenTablesAccessor:
 
 
 def _get_font_style(
-    font_size: Optional[Union[int, str]] = None, font_family: Optional[str] = None
+    font_size: int | str | None = None, font_family: str | None = None
 ) -> List[str]:
-
     font_size = font_size or _options.font_size
     if isinstance(font_size, int):
         font_size = f"{font_size}pt"
@@ -843,7 +548,7 @@ def _get_font_style(
 
 
 def _convert_names(
-    names, max_levels: Optional[int] = None, err_msg: Optional[str] = None
+    names, max_levels: int | None = None, err_msg: str | None = None
 ) -> List[str]:
     """Helper function that converts arguments of index, columns, values to list.
 
@@ -893,7 +598,7 @@ def _combine_n_pct(
     df_n: pd.DataFrame,
     df_pct: pd.DataFrame,
     digits: int = 1,
-    suppress_symbol: Optional[str] = None,
+    suppress_symbol: str | None = None,
 ) -> pd.DataFrame:
     """
     Helper function that formats and combines n and pct values
@@ -906,7 +611,7 @@ def _combine_n_pct(
     return df_n_str.add(df_pct_str)
 
 
-def _seed_to_rng(seed: Optional[Union[int, Generator]] = None) -> Generator:
+def _seed_to_rng(seed: int | Generator | None = None) -> Generator:
     if seed is None:
         # When there is no seed set, we start a RNG based on system entropy
         return np.random.default_rng()
@@ -927,7 +632,7 @@ def _local_suppression(
     mini_df_n: pd.DataFrame,
     low: int = 1,
     high: int = 10,
-    seed: Optional[Union[int, Generator]] = None,
+    seed: int | Generator | None = None,
 ):
     """
     Helper function that applies cell suppression to mini_df_n.
@@ -970,7 +675,8 @@ def _local_suppression(
             mask.values[min_rows.values[coi], coi] = True
 
         if (len(coi) != 0 or len(roi) != 0) and 1 in mask.shape:
-            # Corner Case: if there is one row or column, and one is masked, the rest needs to be masked
+            # Corner Case: if there is one row or column, and one is masked, the rest
+            # needs to be masked
             return pd.DataFrame(
                 np.ones(mask.shape, dtype=bool), columns=colnames, index=rownames
             )
@@ -999,7 +705,8 @@ def _do_suppression(
         ValueError: when the input DataFrame includes NaN values
 
     Returns:
-        pd.DataFrame where entries are True if df_n needs to be suppress and False if not.
+        pd.DataFrame where entries are True if df_n needs to be suppress and False if
+        not.
     """
     # See if there are any NaNs, and raise error
     if fillna:
@@ -1042,28 +749,3 @@ def _combine_mean_std(
     result[is_sample_size_1] = df_mean_str[is_sample_size_1].add(f" ({na_rep})")
     result[is_missing] = na_rep
     return result
-
-
-def _add_style_in_element(
-    ele: Dict[str, Any], style: Union[str, Iterable[str]]
-) -> None:
-    """
-    Helper function that sets the `style` field in a dict to `style` if it doesn't
-    already exist or updates the style field. Maintain the value as a list.
-    """
-
-    if "styles" in ele:
-        if isinstance(style, str):
-            ele["styles"].append(style)
-        elif isinstance(style, list):
-            ele["styles"] += style
-        else:
-            ele["styles"] += list(style)
-
-    else:
-        if isinstance(style, str):
-            ele["styles"] = [style]
-        elif isinstance(style, list):
-            ele["styles"] = style
-        else:
-            ele["styles"] = list(style)

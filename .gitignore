@@ -5,6 +5,10 @@
 __pycache__
 /dist
 .ipynb_checkpoints
+/.ruff_cache
+
+# poetry cruft
+poetry.lock
 
 # Editor cruft
 .vscode
