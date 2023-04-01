@@ -31,4 +31,4 @@ jobs:
         run: hatch run dev:black .
 
       - name: Run tests
-        run: poetry run py.test
+        run: hatch run dev:test

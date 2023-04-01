@@ -44,6 +44,9 @@ dev = [
 python = "3.9"
 features = ["dev"]
 
+[tool.hatch.envs.dev.scripts]
+test = "pytest"
+
 [tool.black]
 target-version = ['py39']
 required-version = '23.3.0'
