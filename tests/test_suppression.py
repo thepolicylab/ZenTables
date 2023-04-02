@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from zentables.zentables import _do_suppression
+from zentables.accessor import _do_suppression
 
 
 @pytest.fixture(scope="function")
@@ -59,7 +59,8 @@ def test_multiple_rows():
 
 def test_random_seed_tie_breaker():
     """
-    If there are several choices, then suppression should be random (i.e change depending on seed)
+    If there are several choices, then suppression should be random (i.e change
+    depending on seed)
     """
     input_array = [
         [3, 3, 3, 3, 3, 3],
@@ -80,9 +81,11 @@ def test_random_seed_tie_breaker():
 def test_nan_values():
     """
     If there are NaN values in the DataFrame, effective suppression cannot happen.
-    The user should be aware of the dimensions of input array, or apply appropriate `fillna()` commands.
+    The user should be aware of the dimensions of input array, or apply appropriate
+    `fillna()` commands.
     """
-    # When the input array has mismatching lengths, pd.DataFrame automatically assumes NaN values
+    # When the input array has mismatching lengths, pd.DataFrame automatically assumes
+    # NaN values
     input_array = [[1, 2, 3], [100, 200]]
     df = pd.DataFrame(input_array)
     with pytest.raises(ValueError):
@@ -179,8 +182,8 @@ def test_nan_in_mean_sd_table():
     # verify that the number of empty
     assert is_nan.sum().sum() == is_null.sum().sum() == number_of_empty_groupings
 
-    ## Realizing that further development is necessary to ensure that 0 is not suppressed
-    ## and if this should even always be true.
-    suppressed_outcome_df = df.zen.mean_sd_table(
+    ## Realizing that further development is necessary to ensure that 0 is not
+    ## suppressed and if this should even always be true.
+    df.zen.mean_sd_table(
         index=["cuisine", "who"], columns="city", values="price", suppress=True, high=2
     )

@@ -3,7 +3,10 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from zentables import zentables
+import zentables.options
+from zentables.accessor import _convert_names, _swap_column_levels
+from zentables.options import OptionsWrapper, _options, set_options
+from zentables.pretty_styler import _get_font_style
 
 file_path = Path(__file__).parent / "fixtures" / "superstore.csv"
 df = pd.read_csv(file_path)
@@ -26,53 +29,49 @@ def pivot():
 
 
 def test__get_font_style():
+    global_font_size = _options.font_size
+    global_font_family = _options.font_family
 
-    global_font_size = zentables._options.font_size
-    global_font_family = zentables._options.font_family
+    assert _get_font_style() == _get_font_style(global_font_size, global_font_family)
 
-    assert zentables._get_font_style() == zentables._get_font_style(
-        global_font_size, global_font_family
-    )
+    font_size_processed, font_family_processed = _get_font_style()
 
-    font_size_processed, font_family_processed = zentables._get_font_style()
-
-    assert zentables._get_font_style(font_family="Arial") == [
+    assert _get_font_style(font_family="Arial") == [
         font_size_processed,
         "font-family: Arial",
     ]
-    assert zentables._get_font_style(font_size=11) == [
+    assert _get_font_style(font_size=11) == [
         "font-size: 11pt",
         font_family_processed,
     ]
 
-    assert zentables._get_font_style(font_size=11, font_family="Arial") == [
+    assert _get_font_style(font_size=11, font_family="Arial") == [
         "font-size: 11pt",
         "font-family: Arial",
     ]
 
-    assert zentables._get_font_style(font_size="11em", font_family="Arial") == [
+    assert _get_font_style(font_size="11em", font_family="Arial") == [
         "font-size: 11em",
         "font-family: Arial",
     ]
 
 
 def test__convert_names():
-    l = ["str1", "str2"]
+    test_list = ["str1", "str2"]
 
-    assert zentables._convert_names("str") == ["str"]
-    assert zentables._convert_names(l) == l
-    assert zentables._convert_names(pd.Series(l)) == l
-
-    with pytest.raises(ValueError):
-        zentables._convert_names(l, 1)
+    assert _convert_names("str") == ["str"]
+    assert _convert_names(test_list) == test_list
+    assert _convert_names(pd.Series(test_list)) == test_list
 
     with pytest.raises(ValueError):
-        zentables._convert_names(l, 1, "Error!")
+        _convert_names(test_list, 1)
+
+    with pytest.raises(ValueError):
+        _convert_names(test_list, 1, "Error!")
 
 
 def test__swap_column_levels(pivot):
-
-    pivot_swapped = zentables._swap_column_levels(pivot)
+    pivot_swapped = _swap_column_levels(pivot)
     col_levels = pivot_swapped.columns.nlevels
 
     assert col_levels == pivot.columns.nlevels
@@ -92,10 +91,10 @@ def test__swap_column_levels(pivot):
 
 def test_global_set_options(monkeypatch):
     # Monkey patch in a new OptionsWrapper object just for this test
-    monkeypatch.setattr(zentables, "_options", zentables.OptionsWrapper())
+    monkeypatch.setattr(zentables.options, "_options", OptionsWrapper())
 
-    zentables.set_options(font_size="11pt")
-    assert zentables._options.font_size == "11pt"
+    set_options(font_size="11pt")
+    assert _options.font_size == "11pt"
 
     with pytest.raises(KeyError):
-        zentables.set_options(foobar=12)
+        set_options(foobar=12)
